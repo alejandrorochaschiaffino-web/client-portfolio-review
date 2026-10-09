@@ -116,13 +116,39 @@ needs_data = pytest.mark.skipif(not SNAPSHOT.exists(), reason="no price snapshot
 
 
 @needs_data
-def test_index_agrees_with_stats_method():
+def test_index_matches_an_independent_calculation():
+    # Rebuild the monthly-rebalanced portfolio a different way: chain the
+    # growth from each month's first trading day to the next one.
     prices = load_snapshot()
     for w in MODEL_PORTFOLIOS.values():
         idx = portfolio_index(prices, w)
-        years = (idx.index[-1] - idx.index[0]).days / 365.25
-        idx_return = idx.iloc[-1] ** (1 / years) - 1
-        assert idx_return == pytest.approx(portfolio_stats(prices, w)["annual_return"], abs=0.005)
+        firsts = prices.groupby(prices.index.to_period("M")).head(1)
+        value, expected = 1.0, [1.0]
+        for a, b in zip(firsts.index[:-1], firsts.index[1:]):
+            value *= sum(wt * prices.at[b, t] / prices.at[a, t] for t, wt in w.items() if wt > 0)
+            expected.append(value)
+        assert idx.loc[firsts.index].to_numpy() == pytest.approx(expected, rel=1e-9)
+
+
+@needs_data
+def test_all_crisis_numbers_describe_the_same_portfolio():
+    from portfolio_tool.risk import run_stress_tests
+    prices = load_snapshot()
+    for w in MODEL_PORTFOLIOS.values():
+        idx = portfolio_index(prices, w)
+        stress = run_stress_tests(prices, w, 100_000)
+        rec = all_recoveries(prices, w)
+        panic = all_panic_costs(prices, w, 100_000)
+        for name in stress:
+            peak = stress[name]["start"]
+            # bottom value, "stayed invested" value and recovery all follow idx
+            assert panic[name]["value_at_bottom"] == pytest.approx(100_000 + stress[name]["dollar_change"], abs=0.01)
+            assert panic[name]["stayed"] == pytest.approx(100_000 * idx.iloc[-1] / idx.loc[peak])
+            if rec[name]["recovered"]:
+                r = rec[name]["recovery_date"]
+                assert idx.loc[r] >= idx.loc[peak]
+                between = idx.loc[stress[name]["end"]:r].iloc[:-1]
+                assert (between < idx.loc[peak]).all()      # first day back, not later
 
 
 @needs_data
@@ -203,3 +229,90 @@ def test_sequence_risk_real_history():
         assert s["crash_first"]["ending"] < s["crash_last"]["ending"]
         no_withdrawals = sequence_risk(prices, w, 500_000, withdrawal_rate=0)
         assert no_withdrawals["difference"] == pytest.approx(0, abs=1e-6)
+
+
+# ---------- Review follow-ups ----------
+
+def test_month_end_values_include_start_and_drop_unfinished_month():
+    from portfolio_tool.risk import month_end_values
+    days = pd.bdate_range("2020-01-15", "2020-03-10")       # March unfinished
+    m = month_end_values(pd.Series(range(1, len(days) + 1), index=days, dtype=float))
+    assert m.index[0] == pd.Timestamp("2020-01-15")          # starting value kept
+    assert m.index[-1] == pd.Timestamp("2020-02-29")          # March dropped
+    assert len(m) == 3
+
+
+@needs_data
+def test_sequence_risk_refuses_unfinished_months():
+    prices = load_snapshot()
+    with pytest.raises(ValueError):
+        sequence_risk(prices, MODEL_PORTFOLIOS["Growth"], 1000, start="2016-11-01", years=10)
+
+
+def test_amount_must_be_a_real_number():
+    from portfolio_tool.allocation import allocate
+    for bad in (float("inf"), float("nan"), 0, -1):
+        with pytest.raises(ValueError):
+            allocate("Moderate", bad)
+
+
+def test_interview_rejects_infinity():
+    import subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    out = subprocess.run([sys.executable, "main.py", "--interview", "--offline"],
+                         input="4\n" * 7 + "T\ninf\nnan\n1e400\n5000\n",
+                         capture_output=True, text=True, cwd=root, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.count("Please enter a dollar amount") == 3
+    for bad in ("$nan", "$inf", "$-nan", "$-inf"):
+        assert bad not in out.stdout.lower()
+    assert "Investing: $5,000" in out.stdout
+
+
+def test_money_formatting():
+    import main
+    assert main.money(-0.3) == "$0"
+    assert main.money(-1234.4) == "-$1,234"
+    assert main.money(450) == "+$450"
+    assert main.dollars(-1234) == "-$1,234"
+    assert main.dollars(464372.2) == "$464,372"
+
+
+def test_duplicate_dates_rejected():
+    from portfolio_tool.data import check_prices
+    p = frame(VTI=[1, 2], VXUS=[1, 2], BND=[1, 2], SGOV=[1, 2])
+    p.index = pd.DatetimeIndex(["2007-01-02", "2007-01-02"])
+    with pytest.raises(RuntimeError):
+        check_prices(p, must_be_recent=False)
+
+
+def test_splice_when_proxy_lacks_the_launch_day():
+    from portfolio_tool.data import splice
+    proxy = pd.Series([10.0, 11.0, 12.0], index=pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-03"]))
+    fund = pd.Series([50.0, 55.0], index=pd.to_datetime(["2020-01-06", "2020-01-07"]))
+    out = splice(fund, proxy)
+    assert list(out.index) == list(proxy.index) + list(fund.index)   # no day lost
+    assert out.loc["2020-01-06"] == 50.0                              # real fund kept
+    assert out.iloc[1] / out.iloc[0] == pytest.approx(1.1)            # proxy returns kept
+
+
+def test_splice_rejects_empty_download():
+    from portfolio_tool.data import splice
+    with pytest.raises(RuntimeError):
+        splice(pd.Series(dtype=float), pd.Series([1.0, 2.0]))
+
+
+@needs_data
+def test_readme_results_table_matches_the_code():
+    from pathlib import Path
+    from portfolio_tool.risk import run_stress_tests
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    prices = load_snapshot()
+    fmt = lambda x: f"{x:.1%}".replace("-", "−")
+    for name, w in MODEL_PORTFOLIOS.items():
+        s = portfolio_stats(prices, w)
+        crises = [r["return"] for r in run_stress_tests(prices, w, 1).values()]
+        row = f"| {name} | " + " | ".join(fmt(x) for x in
+              [s["annual_return"], s["volatility"], s["max_drawdown"], *crises]) + " |"
+        assert row in readme, f"README row out of date: {row}"

@@ -31,23 +31,36 @@ def _download(symbols, start):
     import logging, contextlib, io
     import yfinance as yf   # imported here so the rest works without it
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    # `end` is exclusive: stop at yesterday so today's unfinished trading
+    # day is never saved as if it were a closing price.
+    end = pd.Timestamp.today().strftime("%Y-%m-%d")
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        raw = yf.download(symbols, start=start, auto_adjust=True,
+        raw = yf.download(symbols, start=start, end=end, auto_adjust=True,
                           progress=False, threads=False)
+    if raw is None or raw.empty:
+        raise RuntimeError("Download returned nothing")
     closes = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
-    return closes.dropna(how="all")
+    closes = closes.dropna(how="all")
+    missing = [s for s in symbols if s not in closes.columns or closes[s].dropna().empty]
+    if missing:
+        raise RuntimeError(f"Download is missing {missing}")
+    return closes
 
 
 def splice(fund: pd.Series, proxy: pd.Series) -> pd.Series:
     """Extend `fund` back in time using the proxy's daily returns."""
     fund, proxy = fund.dropna(), proxy.dropna()
+    if fund.empty or proxy.empty:
+        raise RuntimeError("Cannot splice an empty price series")
     first = fund.index[0]
     earlier = proxy[proxy.index <= first]
     if len(earlier) < 2:
         return fund
-    # Scale the proxy so it meets the real fund's price on its first day
+    # Scale the proxy so it meets the real fund's price on the fund's first day
     scaled = earlier * (fund.iloc[0] / earlier.iloc[-1])
-    return pd.concat([scaled.iloc[:-1], fund]).sort_index()
+    if scaled.index[-1] == first:          # same day in both: keep the real fund's price
+        scaled = scaled.iloc[:-1]
+    return pd.concat([scaled, fund]).sort_index()
 
 
 def fetch_prices(start: str = START) -> pd.DataFrame:
@@ -73,8 +86,8 @@ def check_prices(prices: pd.DataFrame, must_be_recent: bool = True) -> None:
         raise RuntimeError(f"Missing funds: {missing}")
     if prices[TICKERS].isna().any().any() or (prices[TICKERS] <= 0).any().any():
         raise RuntimeError("Prices contain gaps or non-positive values")
-    if not prices.index.is_monotonic_increasing:
-        raise RuntimeError("Dates are out of order")
+    if not prices.index.is_monotonic_increasing or not prices.index.is_unique:
+        raise RuntimeError("Dates are out of order or repeated")
     if prices.index[0] > MUST_START_BY:
         raise RuntimeError(f"History starts {prices.index[0]:%Y-%m-%d}, too late for the 2008 test")
     if must_be_recent and (pd.Timestamp.today() - prices.index[-1]).days > 10:

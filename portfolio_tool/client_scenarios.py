@@ -4,11 +4,15 @@ Three questions clients actually ask an advisor after a crash:
 1. Recovery time   - "How long until I'm back to even?"
 2. Panic-selling   - "What if I sell now and wait until things calm down?"
 3. Timing risk     - "Does it matter WHEN a crash happens if I'm retired?"
+
+All three use the same portfolio path as the stress tests (risk.portfolio_index:
+rebalanced monthly), so a client's loss, recovery date and "stayed invested"
+value all describe the same portfolio.
 """
 
 import pandas as pd
 
-from .risk import SCENARIOS, _nearest, portfolio_index, stress_test
+from .risk import SCENARIOS, _nearest, month_end_values, portfolio_index
 
 DAYS_PER_MONTH = 365.25 / 12
 
@@ -19,22 +23,19 @@ def _months(a: pd.Timestamp, b: pd.Timestamp) -> float:
 
 # ---------------------------------------------------------------- 1. Recovery
 
-def recovery_time(prices: pd.DataFrame, weights: dict, peak: str, bottom: str) -> dict:
-    """
-    Buy at the peak and hold (same method as the stress test). Find the first
-    day after the bottom when the portfolio is back to its starting value.
-    """
-    p, b = _nearest(prices, peak), _nearest(prices, bottom)
-    cols = [t for t, w in weights.items() if w > 0]
-    held = prices.loc[p:, cols]
-    value = sum(held[t] / held[t].iloc[0] * weights[t] for t in cols)
-
-    after = value.loc[b:]
-    back = after[after >= 1.0]
+def recovery_time(prices: pd.DataFrame, weights: dict, peak: str, bottom: str,
+                  index: pd.Series = None) -> dict:
+    """First day after the bottom when the portfolio is back to its value at the peak."""
+    if index is None:
+        index = portfolio_index(prices, weights)
+    p, b = _nearest(index, peak), _nearest(index, bottom)
+    level = index.loc[p]
+    after = index.loc[b:]
+    back = after[after >= level]
     if back.empty:
         return {"recovered": False, "recovery_date": None,
                 "months_total": None, "months_from_bottom": None,
-                "still_down": float(value.iloc[-1] - 1)}
+                "still_down": float(index.iloc[-1] / level - 1)}
     r = back.index[0]
     return {"recovered": True, "recovery_date": r,
             "months_total": _months(p, r), "months_from_bottom": _months(b, r),
@@ -42,27 +43,30 @@ def recovery_time(prices: pd.DataFrame, weights: dict, peak: str, bottom: str) -
 
 
 def all_recoveries(prices, weights):
-    return {name: recovery_time(prices, weights, s, e)
+    index = portfolio_index(prices, weights)
+    return {name: recovery_time(prices, weights, s, e, index)
             for name, (s, e) in SCENARIOS.items()}
 
 
 # ----------------------------------------------------------- 2. Panic-selling
 
 def panic_sell_cost(prices: pd.DataFrame, weights: dict, amount: float,
-                    peak: str, bottom: str, wait_months: int = 12) -> dict:
+                    peak: str, bottom: str, wait_months: int = 12,
+                    index: pd.Series = None) -> dict:
     """
     Two clients invest `amount` at the peak in the same portfolio and ride
-    the crash to the bottom (same numbers as the stress test). From there:
-    - one stays invested until today, rebalanced monthly;
+    the crash to the bottom. From there:
+    - one stays invested until today;
     - the other sells everything at the bottom, holds T-bills (SGOV) for
       `wait_months`, then buys the same portfolio back.
     """
-    b = _nearest(prices, bottom)
-    back_in = _nearest(prices, b + pd.DateOffset(months=wait_months))
+    if index is None:
+        index = portfolio_index(prices, weights)
+    p, b = _nearest(index, peak), _nearest(index, bottom)
+    back_in = _nearest(index, b + pd.DateOffset(months=wait_months))
 
-    at_bottom = amount * (1 + stress_test(prices, weights, 1.0, peak, bottom)["return"])
-    index = portfolio_index(prices, weights, start=b)      # $1 at the bottom
-    stayed = at_bottom * index.iloc[-1]
+    at_bottom = amount * index.loc[b] / index.loc[p]
+    stayed = amount * index.iloc[-1] / index.loc[p]
     cash_growth = prices["SGOV"].loc[back_in] / prices["SGOV"].loc[b]
     panicked = at_bottom * cash_growth * index.iloc[-1] / index.loc[back_in]
     return {"value_at_bottom": at_bottom, "stayed": stayed, "panicked": panicked,
@@ -71,7 +75,8 @@ def panic_sell_cost(prices: pd.DataFrame, weights: dict, amount: float,
 
 
 def all_panic_costs(prices, weights, amount, wait_months=12):
-    return {name: panic_sell_cost(prices, weights, amount, s, e, wait_months)
+    index = portfolio_index(prices, weights)
+    return {name: panic_sell_cost(prices, weights, amount, s, e, wait_months, index)
             for name, (s, e) in SCENARIOS.items()}
 
 
@@ -93,14 +98,14 @@ def sequence_risk(prices: pd.DataFrame, weights: dict, amount: float,
     """
     Retiree A retires right before the 2008 crash and withdraws a fixed
     amount every month for `years`. Retiree B gets the EXACT same monthly
-    returns in reverse order, so the crash comes at the end. Same average
+    returns in reverse order, so the crash comes at the end. Same compound
     return, same withdrawals - only the order differs.
     """
     index = portfolio_index(prices, weights)
-    monthly = index.resample("ME").last().pct_change().dropna()
+    monthly = month_end_values(index).pct_change().dropna()   # complete months only
     returns = monthly.loc[start:].iloc[: years * 12]
     if len(returns) < years * 12:
-        raise ValueError(f"Not enough history for {years} years from {start}")
+        raise ValueError(f"Not enough complete months for {years} years from {start}")
 
     withdrawal = amount * withdrawal_rate / 12
     crash_first = run_withdrawals(returns.to_numpy(), amount, withdrawal)
@@ -109,7 +114,7 @@ def sequence_risk(prices: pd.DataFrame, weights: dict, amount: float,
     return {
         "period_start": returns.index[0], "period_end": returns.index[-1],
         "years": years, "yearly_withdrawal": withdrawal * 12,
-        "avg_yearly_return": growth ** (1 / years) - 1,   # identical for both
+        "annualized_return": growth ** (1 / years) - 1,   # identical for both orders
         "crash_first": crash_first, "crash_last": crash_last,
         "difference": crash_last["ending"] - crash_first["ending"],
     }

@@ -1,11 +1,15 @@
 """
 Risk analytics on real price history.
 
-- Long-run stats: yearly return, volatility (how much returns swing),
-  and maximum drawdown (worst peak-to-bottom fall), using monthly
-  rebalancing back to the target weights.
-- Stress tests: what the portfolio would have done in three real crises,
-  buying at the peak and holding to the bottom.
+Everything here is measured on ONE daily portfolio value series: $1
+invested, rebalanced back to the target weights on the first trading day of
+every month. Using a single series keeps all the numbers consistent with
+each other (the worst fall, each crisis loss, recovery times, etc.).
+
+- Long-run stats: annualized (compound) return, volatility of monthly
+  returns, and maximum drawdown (worst peak-to-bottom fall, daily).
+- Stress tests: what the portfolio did in three real crises, from the
+  market peak to the market bottom.
 """
 
 import math
@@ -36,7 +40,7 @@ def portfolio_index(prices: pd.DataFrame, weights: dict,
                     start=None, end=None) -> pd.Series:
     """
     Daily value of $1 invested at `start`, rebalanced back to the target
-    weights on the first trading day of every month.
+    weights on the first trading day of every month (at that day's close).
     """
     cols = [t for t, w in weights.items() if w > 0]
     target = np.array([weights[t] for t in cols])
@@ -54,26 +58,37 @@ def portfolio_index(prices: pd.DataFrame, weights: dict,
     return pd.Series(values, index=px.index)
 
 
+def month_end_values(index: pd.Series) -> pd.Series:
+    """
+    Month-end values, starting with the very first value so the first
+    month counts, and dropping a final month that isn't finished yet.
+    """
+    monthly = index.resample("ME").last()
+    last = index.index[-1]
+    if last < last + pd.offsets.BMonthEnd(0):           # month still in progress
+        monthly = monthly.iloc[:-1]
+    first_month = index.index.to_period("M") == index.index[0].to_period("M")
+    if first_month.sum() > 1:                           # start isn't already a month-end
+        start = pd.Series([index.iloc[0]], index=[index.index[0]])
+        monthly = pd.concat([start, monthly])
+    return monthly
+
+
 def portfolio_stats(prices: pd.DataFrame, weights: dict) -> dict:
-    """
-    Annual return, volatility and max drawdown, all from the same daily
-    portfolio value (rebalanced monthly), so the numbers agree with each other.
-    """
+    """Annualized return, volatility of monthly returns, and max drawdown."""
     index = portfolio_index(prices, weights)
     start, end = index.index[0], index.index[-1]
     years = (end - start).days / 365.25
-    month_ends = pd.concat([pd.Series([1.0], index=[start]),
-                            index.resample("ME").last()])
-    monthly = month_ends.pct_change().dropna()
+    monthly = month_end_values(index).pct_change().dropna()
     return {
-        "annual_return": float(index.iloc[-1] ** (1 / years) - 1),
+        "annual_return": float(index.iloc[-1] ** (1 / years) - 1),   # compound (CAGR)
         "volatility": float(monthly.std() * math.sqrt(12)),
         "max_drawdown": max_drawdown(index),        # daily, catches the true bottom
         "start": start, "end": end, "years": years,
     }
 
 
-def _nearest(prices: pd.DataFrame, date: str) -> pd.Timestamp:
+def _nearest(prices, date) -> pd.Timestamp:
     """First trading day on or after `date`. Refuses dates outside the data."""
     ts = pd.Timestamp(date)
     if ts < prices.index[0] or ts > prices.index[-1]:
@@ -83,17 +98,19 @@ def _nearest(prices: pd.DataFrame, date: str) -> pd.Timestamp:
 
 
 def stress_test(prices: pd.DataFrame, weights: dict, amount: float,
-                start: str, end: str) -> dict:
-    """Buy at `start`, hold to `end`. Returns % and dollar results."""
-    s, e = _nearest(prices, start), _nearest(prices, end)
-    window = prices.loc[s:e, list(weights)]
-    value = sum(window[t] / window[t].iloc[0] * w for t, w in weights.items())
-    ret = float(value.iloc[-1] - 1)
+                start: str, end: str, index: pd.Series = None) -> dict:
+    """Invested at `start` (the peak), measured at `end` (the bottom)."""
+    if index is None:
+        index = portfolio_index(prices, weights)
+    s, e = _nearest(index, start), _nearest(index, end)
+    path = index.loc[s:e] / index.loc[s]
+    ret = float(path.iloc[-1] - 1)
     return {"start": s, "end": e, "return": ret,
             "dollar_change": round(amount * ret, 2),
-            "worst_drop": max_drawdown(value)}
+            "worst_drop": max_drawdown(path)}
 
 
 def run_stress_tests(prices: pd.DataFrame, weights: dict, amount: float) -> dict:
-    return {name: stress_test(prices, weights, amount, s, e)
+    index = portfolio_index(prices, weights)
+    return {name: stress_test(prices, weights, amount, s, e, index)
             for name, (s, e) in SCENARIOS.items()}

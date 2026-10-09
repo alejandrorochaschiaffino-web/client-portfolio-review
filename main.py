@@ -6,6 +6,7 @@ Run the tool from the terminal.
     python main.py --offline    -> skip the live download, use saved prices
 """
 
+import math
 import sys
 from portfolio_tool.profiles import QUESTIONS, assess
 from portfolio_tool.allocation import allocate, stock_share
@@ -19,12 +20,16 @@ from portfolio_tool import data
 
 def money(x):
     """Signed dollars for gains and losses, e.g. -$2,030 or +$450."""
-    return f"-${abs(x):,.0f}" if x < 0 else f"+${x:,.0f}"
+    x = round(x)
+    if x == 0:
+        return "$0"
+    return f"-${abs(x):,}" if x < 0 else f"+${x:,}"
 
 
 def dollars(x):
-    """Plain dollars for balances, e.g. $464,372."""
-    return f"${x:,.0f}"
+    """Plain dollars for balances, e.g. $464,372 (or -$1,234 if negative)."""
+    x = round(x)
+    return f"-${abs(x):,}" if x < 0 else f"${x:,}"
 
 
 def show_risk(alloc, prices):
@@ -32,13 +37,13 @@ def show_risk(alloc, prices):
 
     if prices is not None:
         s = portfolio_stats(prices, weights)
-        print(f"History {s['start']:%Y}-{s['end']:%Y} (rebalanced monthly):")
-        print(f"  Average yearly return  {s['annual_return']:>7.1%}")
-        print(f"  Volatility             {s['volatility']:>7.1%}")
-        print(f"  Worst fall from a peak {s['max_drawdown']:>7.1%}  "
+        print(f"History {s['start']:%b %Y} to {s['end']:%b %Y} (rebalanced monthly):")
+        print(f"  {'Annualized return (compound)':33}{s['annual_return']:>7.1%}")
+        print(f"  {'Volatility (monthly, annualized)':33}{s['volatility']:>7.1%}")
+        print(f"  {'Worst fall from a peak':33}{s['max_drawdown']:>7.1%}  "
               f"({money(s['max_drawdown'] * alloc.amount)} on today's amount)")
         print()
-        print("Crisis stress tests (bought at the peak, held to the bottom):")
+        print("Crisis stress tests (invested at the market peak, measured at the bottom):")
         recoveries = all_recoveries(prices, weights)
         for name, r in run_stress_tests(prices, weights, alloc.amount).items():
             print(f"  {name:24} {r['return']:>7.1%}  {money(r['dollar_change']):>12}")
@@ -70,8 +75,13 @@ def show_risk(alloc, prices):
             ending = ("ran out of money in month " + str(out["ran_out_month"])
                       if out["ran_out_month"] else dollars(out["ending"]) + " left")
             print(f"  {label:42} {ending}")
-        print(f"  Same {s['avg_yearly_return']:.1%} average yearly return; "
-              f"timing alone made a {dollars(s['difference'])} difference.")
+        first, last = s["crash_first"], s["crash_last"]
+        if first["ran_out_month"] and last["ran_out_month"]:
+            print(f"  Both ran out of money; the crash-first retiree ran out "
+                  f"{last['ran_out_month'] - first['ran_out_month']} months sooner.")
+        else:
+            print(f"  Same {s['annualized_return']:.1%} annualized return; "
+                  f"timing alone made a {dollars(abs(s['difference']))} difference.")
         print()
 
     print("Interest-rate shock on bonds and cash (duration x rate change):")
@@ -108,7 +118,7 @@ def get_prices():
         prices, source = data.load_prices(live="--offline" not in sys.argv)
         print(f"Market data: {source}\n")
         return prices
-    except FileNotFoundError as e:
+    except Exception as e:      # missing or damaged data: still show what we can
         print(f"Market data unavailable ({e}). Showing rate shocks only.\n")
         return None
 
@@ -132,7 +142,7 @@ def interview(prices):
         raw = input("Amount to invest ($): ").replace(",", "").replace("$", "").strip()
         try:
             amount = float(raw)
-            if amount > 0:
+            if math.isfinite(amount) and amount > 0:
                 break
         except ValueError:
             pass

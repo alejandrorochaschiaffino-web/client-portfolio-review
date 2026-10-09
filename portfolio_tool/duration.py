@@ -1,14 +1,17 @@
 """
 Duration and the bond rate-shock test.
 
-Duration = the weighted-average time until you get your money back, where
-each payment's weight is its share of the bond's present value. It is
-also the rule of thumb for interest-rate risk:
-
-    % change in bond price  ~=  -duration x change in yield
-
-So a bond fund with a 5.8-year duration loses about 5.8% if rates rise 1%.
+Macaulay duration = the weighted-average time until you get your money
+back, where each payment's weight is its share of the bond's present value.
 This is the same Weight x Time method from the class Excel sheet.
+
+Divide it by (1 + yield per period) to get MODIFIED duration, which is the
+rule of thumb for interest-rate risk:
+
+    % change in bond price  ~=  -modified duration x change in yield
+
+Bond funds publish an effective duration that works the same way, so a fund
+with a 5.8-year duration loses about 5.8% if rates rise 1 percentage point.
 """
 
 from .allocation import Allocation

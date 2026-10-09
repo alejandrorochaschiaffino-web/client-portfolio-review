@@ -47,10 +47,13 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    same thing: VGTSX for international stocks and BIL for T-bills. If the live download
    fails, the tool uses the saved snapshot in `data/prices.csv`, which a GitHub Action
    refreshes every Monday.
-2. **Long-run risk.** Average yearly return, volatility, and the worst fall from a peak
-   (max drawdown), measured on daily values with the portfolio rebalanced to its target weights
-   every month.
-3. **Crisis stress tests.** Buy at the market peak, hold to the bottom:
+2. **One consistent portfolio path.** Every number below comes from the same daily value
+   series: the portfolio rebalanced back to its target weights on the first trading day of
+   each month. So a client's crisis loss, worst fall, recovery date and "stayed invested"
+   value all describe the same portfolio.
+3. **Long-run risk.** Annualized (compound) return, volatility of monthly returns
+   (annualized), and the worst fall from a peak (max drawdown, from daily values).
+4. **Crisis stress tests.** Invested at the market peak, measured at the market bottom:
 
    | Crisis | Peak | Bottom |
    |---|---|---|
@@ -58,7 +61,7 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    | 2020 COVID Crash | Feb 19, 2020 | Mar 23, 2020 |
    | 2022 Rate Shock | Jan 3, 2022 | Oct 12, 2022 |
 
-4. **Rate shock with duration.** Bond price change ≈ −duration × change in rates. BND's
+5. **Rate shock with duration.** Bond price change ≈ −duration × change in rates. BND's
    average duration is 5.8 years ([Vanguard fact sheet](https://workplace.vanguard.com/iippdf/pdfs/FS928R.pdf),
    June 30, 2026); SGOV's is about 0.1 years. The duration math is tested against a class
    example: a 4-year, 5% quarterly bond at a 9% yield prices at $866.87 with a duration of
@@ -66,12 +69,12 @@ stress-tests a portfolio, and writes the client review an advisor would send.
 
 ## Results (real data, Jun 2007 – Oct 2026)
 
-| Profile | Avg yearly return | Volatility | Worst fall | 2008 crisis | 2020 COVID | 2022 rate shock |
+| Profile | Annualized return | Volatility | Worst fall | 2008 crisis | 2020 COVID | 2022 rate shock |
 |---|---|---|---|---|---|---|
-| Conservative | 4.0% | 4.6% | −14.4% | −6.5% | −7.6% | −13.0% |
-| Moderately Conservative | 5.6% | 7.3% | −24.8% | −18.9% | −14.4% | −16.8% |
-| Moderate | 7.0% | 10.2% | −36.9% | −31.2% | −21.2% | −20.6% |
-| Growth | 8.2% | 13.8% | −50.2% | −47.2% | −29.6% | −24.3% |
+| Conservative | 4.0% | 4.6% | −14.4% | −10.3% | −8.1% | −13.2% |
+| Moderately Conservative | 5.6% | 7.3% | −24.8% | −24.4% | −15.1% | −17.0% |
+| Moderate | 7.0% | 10.2% | −36.9% | −36.7% | −21.9% | −20.7% |
+| Growth | 8.2% | 13.8% | −50.2% | −50.0% | −29.9% | −24.3% |
 
 **Key finding:** the Conservative portfolio lost *more* in 2022 than in 2008. In 2008 bonds
 rose while stocks crashed; in 2022 rising rates pushed bonds down with stocks, exactly what
@@ -89,16 +92,17 @@ On $100,000 in the Growth portfolio (values as of Oct 9, 2026):
 
 | Crisis | Back to even after | Stayed invested | Panic-sold | Cost of panicking |
 |---|---|---|---|---|
-| 2008 Financial Crisis | 53 months (Mar 2012) | $469,563 | $281,140 | $188,423 |
-| 2020 COVID Crash | 6 months (Aug 2020) | $204,743 | $122,098 | $82,646 |
-| 2022 Rate Shock | 25 months (Feb 2024) | $152,248 | $134,724 | $17,524 |
+| 2008 Financial Crisis | 43 months (Apr 2011) | $444,250 | $266,134 | $178,116 |
+| 2020 COVID Crash | 6 months (Aug 2020) | $203,014 | $121,454 | $81,561 |
+| 2022 Rate Shock | 25 months (Jan 2024) | $152,274 | $134,760 | $17,514 |
 
 **Retirement timing:** a $500,000 Growth portfolio withdrawing $25,000 a year from Nov 2007 to
 Oct 2017 ends with **$451,949** when the crash comes first, but **$597,361** with the same
-returns in reverse order. Same 5.8% average return; the order alone cost **$145,412**.
+returns in reverse order. Same 5.8% annualized return; the order alone cost **$145,412**.
 
-Past results don't predict future returns. Crisis figures assume buying at the peak and
-holding to the bottom, before fees and taxes.
+Past results don't predict future returns. Crisis figures assume investing at the exact
+market peak, before fees and taxes. "Stayed invested" values change as new prices arrive
+each week.
 
 ## Run it
 

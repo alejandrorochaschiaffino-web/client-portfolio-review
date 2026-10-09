@@ -3,6 +3,7 @@ Allocation engine: turn a profile + an investment amount into
 dollars per fund and a stocks/bonds/cash summary.
 """
 
+import math
 from dataclasses import dataclass
 from .portfolios import FUNDS, MODEL_PORTFOLIOS, DESCRIPTIONS
 
@@ -28,8 +29,8 @@ class Allocation:
 def allocate(profile: str, amount: float) -> Allocation:
     if profile not in MODEL_PORTFOLIOS:
         raise ValueError(f"Unknown profile: {profile}")
-    if amount <= 0:
-        raise ValueError("Amount must be positive")
+    if not math.isfinite(amount) or amount <= 0:
+        raise ValueError("Amount must be a positive number")
 
     holdings = []
     by_class = {}
