@@ -48,7 +48,8 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    fails, the tool uses the saved snapshot in `data/prices.csv`, which a GitHub Action
    refreshes every Monday.
 2. **Long-run risk.** Average yearly return, volatility, and the worst fall from a peak
-   (max drawdown), rebalancing to target weights monthly.
+   (max drawdown), measured on daily values with the portfolio rebalanced to its target weights
+   every month.
 3. **Crisis stress tests.** Buy at the market peak, hold to the bottom:
 
    | Crisis | Peak | Bottom |
@@ -63,14 +64,14 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    example: a 4-year, 5% quarterly bond at a 9% yield prices at $866.87 with a duration of
    3.6174 years.
 
-## Results (real data, Jul 2007 – Oct 2026)
+## Results (real data, Jun 2007 – Oct 2026)
 
 | Profile | Avg yearly return | Volatility | Worst fall | 2008 crisis | 2020 COVID | 2022 rate shock |
 |---|---|---|---|---|---|---|
-| Conservative | 4.0% | 4.6% | −13.1% | −6.5% | −7.6% | −13.0% |
-| Moderately Conservative | 5.5% | 7.2% | −22.5% | −18.9% | −14.4% | −16.8% |
-| Moderate | 6.9% | 10.1% | −33.9% | −31.2% | −21.2% | −20.6% |
-| Growth | 8.2% | 13.8% | −46.6% | −47.2% | −29.6% | −24.3% |
+| Conservative | 4.0% | 4.6% | −14.4% | −6.5% | −7.6% | −13.0% |
+| Moderately Conservative | 5.6% | 7.3% | −24.8% | −18.9% | −14.4% | −16.8% |
+| Moderate | 7.0% | 10.2% | −36.9% | −31.2% | −21.2% | −20.6% |
+| Growth | 8.2% | 13.8% | −50.2% | −47.2% | −29.6% | −24.3% |
 
 **Key finding:** the Conservative portfolio lost *more* in 2022 than in 2008. In 2008 bonds
 rose while stocks crashed; in 2022 rising rates pushed bonds down with stocks, exactly what

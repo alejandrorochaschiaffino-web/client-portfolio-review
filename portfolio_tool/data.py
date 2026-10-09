@@ -64,21 +64,27 @@ def fetch_prices(start: str = START) -> pd.DataFrame:
     return prices
 
 
-def check_prices(prices: pd.DataFrame) -> None:
-    """Refuse incomplete data, e.g. if one stand-in fund failed to download."""
+def check_prices(prices: pd.DataFrame, must_be_recent: bool = True) -> None:
+    """Refuse incomplete or broken data, e.g. if one stand-in fund failed to download."""
     if prices.empty:
-        raise RuntimeError("Download returned no usable prices")
+        raise RuntimeError("No usable prices")
     missing = [t for t in TICKERS if t not in prices.columns]
     if missing:
         raise RuntimeError(f"Missing funds: {missing}")
+    if prices[TICKERS].isna().any().any() or (prices[TICKERS] <= 0).any().any():
+        raise RuntimeError("Prices contain gaps or non-positive values")
+    if not prices.index.is_monotonic_increasing:
+        raise RuntimeError("Dates are out of order")
     if prices.index[0] > MUST_START_BY:
         raise RuntimeError(f"History starts {prices.index[0]:%Y-%m-%d}, too late for the 2008 test")
-    if (pd.Timestamp.today() - prices.index[-1]).days > 10:
+    if must_be_recent and (pd.Timestamp.today() - prices.index[-1]).days > 10:
         raise RuntimeError(f"Latest price is {prices.index[-1]:%Y-%m-%d}, more than 10 days old")
 
 
 def load_snapshot(path: Path = SNAPSHOT) -> pd.DataFrame:
-    return pd.read_csv(path, index_col=0, parse_dates=True)
+    prices = pd.read_csv(path, index_col=0, parse_dates=True)
+    check_prices(prices, must_be_recent=False)     # a snapshot may be a little old
+    return prices
 
 
 def load_prices(live: bool = True) -> tuple[pd.DataFrame, str]:

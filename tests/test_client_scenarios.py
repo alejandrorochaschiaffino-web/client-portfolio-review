@@ -126,6 +126,47 @@ def test_index_agrees_with_stats_method():
 
 
 @needs_data
+def test_worst_fall_is_at_least_as_bad_as_every_crisis():
+    from portfolio_tool.risk import run_stress_tests
+    prices = load_snapshot()
+    for w in MODEL_PORTFOLIOS.values():
+        worst = portfolio_stats(prices, w)["max_drawdown"]
+        for r in run_stress_tests(prices, w, 1).values():
+            assert worst <= r["return"] + 1e-9
+
+
+@needs_data
+def test_riskier_profiles_rank_correctly():
+    prices = load_snapshot()
+    order = ["Conservative", "Moderately Conservative", "Moderate", "Growth"]
+    stats = [portfolio_stats(prices, MODEL_PORTFOLIOS[p]) for p in order]
+    vols = [s["volatility"] for s in stats]
+    worst = [s["max_drawdown"] for s in stats]
+    assert vols == sorted(vols)
+    assert worst == sorted(worst, reverse=True)
+
+
+def test_broken_snapshot_is_rejected(tmp_path):
+    from portfolio_tool.data import load_snapshot as load
+    bad = tmp_path / "prices.csv"
+    bad.write_text("Date,VTI,VXUS,BND\n2007-06-01,1,2,3\n")      # SGOV missing
+    with pytest.raises(RuntimeError):
+        load(bad)
+
+
+def test_interview_handles_bad_amounts():
+    import subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    answers = "4\n" * 7 + "Test\nfifty\n0\n-5\n$25,000\n"
+    out = subprocess.run([sys.executable, "main.py", "--interview", "--offline"],
+                         input=answers, capture_output=True, text=True, cwd=root, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.count("Please enter a dollar amount") == 3
+    assert "25,000" in out.stdout
+
+
+@needs_data
 def test_2008_recovery_is_slower_for_riskier_portfolios():
     prices = load_snapshot()
     g = all_recoveries(prices, MODEL_PORTFOLIOS["Growth"])["2008 Financial Crisis"]

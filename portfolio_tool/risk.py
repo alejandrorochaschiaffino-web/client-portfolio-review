@@ -55,16 +55,21 @@ def portfolio_index(prices: pd.DataFrame, weights: dict,
 
 
 def portfolio_stats(prices: pd.DataFrame, weights: dict) -> dict:
-    """Annual return, volatility and max drawdown with monthly rebalancing."""
-    monthly = prices[list(weights)].resample("ME").last().pct_change().dropna()
-    port = sum(monthly[t] * w for t, w in weights.items())
-    growth = (1 + port).cumprod()
-    years = len(port) / 12
+    """
+    Annual return, volatility and max drawdown, all from the same daily
+    portfolio value (rebalanced monthly), so the numbers agree with each other.
+    """
+    index = portfolio_index(prices, weights)
+    start, end = index.index[0], index.index[-1]
+    years = (end - start).days / 365.25
+    month_ends = pd.concat([pd.Series([1.0], index=[start]),
+                            index.resample("ME").last()])
+    monthly = month_ends.pct_change().dropna()
     return {
-        "annual_return": float(growth.iloc[-1] ** (1 / years) - 1),
-        "volatility": float(port.std() * math.sqrt(12)),
-        "max_drawdown": max_drawdown(pd.concat([pd.Series([1.0]), growth])),
-        "start": port.index[0], "end": port.index[-1], "years": years,
+        "annual_return": float(index.iloc[-1] ** (1 / years) - 1),
+        "volatility": float(monthly.std() * math.sqrt(12)),
+        "max_drawdown": max_drawdown(index),        # daily, catches the true bottom
+        "start": start, "end": end, "years": years,
     }
 
 

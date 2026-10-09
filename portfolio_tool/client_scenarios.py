@@ -57,7 +57,7 @@ def panic_sell_cost(prices: pd.DataFrame, weights: dict, amount: float,
     - the other sells everything at the bottom, holds T-bills (SGOV) for
       `wait_months`, then buys the same portfolio back.
     """
-    p, b = _nearest(prices, peak), _nearest(prices, bottom)
+    b = _nearest(prices, bottom)
     back_in = _nearest(prices, b + pd.DateOffset(months=wait_months))
 
     at_bottom = amount * (1 + stress_test(prices, weights, 1.0, peak, bottom)["return"])

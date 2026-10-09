@@ -128,7 +128,15 @@ def interview(prices):
             print("Please type 1, 2, 3 or 4.")
         print()
     name = input("Client name: ").strip() or "New client"
-    amount = float(input("Amount to invest ($): ").replace(",", "").replace("$", ""))
+    while True:
+        raw = input("Amount to invest ($): ").replace(",", "").replace("$", "").strip()
+        try:
+            amount = float(raw)
+            if amount > 0:
+                break
+        except ValueError:
+            pass
+        print("Please enter a dollar amount greater than 0, like 50000.")
     show_review(name, "Live interview", amount, answers, prices)
 
 
