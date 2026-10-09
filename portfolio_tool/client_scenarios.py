@@ -85,11 +85,14 @@ def all_panic_costs(prices, weights, amount, wait_months=12):
 def run_withdrawals(returns, amount: float, monthly_withdrawal: float) -> dict:
     """Grow the balance each month, then take the withdrawal."""
     balance = amount
+    path = [amount]                      # balance after each month, for charts
     for month, r in enumerate(returns, start=1):
         balance = balance * (1 + r) - monthly_withdrawal
         if balance <= 0:
-            return {"ending": 0.0, "ran_out_month": month}
-    return {"ending": balance, "ran_out_month": None}
+            path.append(0.0)
+            return {"ending": 0.0, "ran_out_month": month, "path": path}
+        path.append(balance)
+    return {"ending": balance, "ran_out_month": None, "path": path}
 
 
 def sequence_risk(prices: pd.DataFrame, weights: dict, amount: float,

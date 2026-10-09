@@ -9,7 +9,7 @@ stress-tests a portfolio, and writes the client review an advisor would send.
 
 - [x] **Phase 1 — Foundation:** risk questionnaire, suitability caps, model portfolios, allocation engine
 - [x] **Phase 2 — Risk engine:** real ETF data, crisis stress tests, duration rate shock
-- [ ] Phase 3 — MVP: bilingual AI client report, web app, public link
+- [x] **Phase 3 — Web app:** interactive charts, English/Spanish interface, bilingual client letter (template + optional AI)
 - [ ] Phase 4 — Monte Carlo goal projection, PDF export
 - [ ] Phase 5 — Demo video and polish
 
@@ -104,10 +104,27 @@ Past results don't predict future returns. Crisis figures assume investing at th
 market peak, before fees and taxes. "Stayed invested" values change as new prices arrive
 each week.
 
+## How it works (Phase 3)
+
+1. **Web app** (`app.py`, Streamlit). Fill in the questionnaire in the sidebar, or start from a
+   sample client, and switch the whole interface between English and Spanish. Five tabs:
+   overview and allocation, crisis stress tests, client questions (panic-selling and
+   retirement timing), interest-rate shocks, and the client letter.
+2. **One source of truth.** `review.build_review()` runs every analysis once; the app, the
+   terminal demo and the letter all read from it, so they can't disagree.
+3. **Bilingual client letter.** A built-in template writes the review in English or Spanish
+   from the analysis, for free, every time.
+4. **Optional AI letter, with a safety check.** With an `ANTHROPIC_API_KEY`, Claude (Haiku)
+   rewrites the letter in a warmer voice. The tool then compares every number in the AI's
+   letter with the numbers in the analysis. If the AI changed or invented even one number,
+   its letter is discarded and the template is shown instead. Limited to 5 AI letters per
+   visitor session to keep costs near zero.
+
 ## Run it
 
 ```bash
-python3 main.py               # review the three sample clients
+streamlit run app.py          # open the web app
+python3 main.py               # review the three sample clients in the terminal
 python3 main.py --interview   # take the questionnaire yourself
 python3 main.py --offline     # use saved prices, no download
 python3 scripts/fetch_data.py # refresh the price snapshot
@@ -126,8 +143,12 @@ portfolio_tool/
   risk.py            return, volatility, drawdown, crisis stress tests
   duration.py        bond duration and the rate-shock test
   client_scenarios.py  recovery time, panic-selling cost, retirement timing risk
+  review.py          runs every analysis for one client
+  report.py          bilingual client letter (template + AI with number check)
+  i18n.py            English/Spanish text
 scripts/fetch_data.py  downloads fresh prices
 data/prices.csv      saved price snapshot
+app.py               web app (Streamlit)
 main.py              terminal demo
 tests/               automated checks
 ```
