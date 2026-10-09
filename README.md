@@ -63,6 +63,22 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    example: a 4-year, 5% quarterly bond at a 9% yield prices at $866.87 with a duration of
    3.6174 years.
 
+## Results (real data, Jul 2007 – Oct 2026)
+
+| Profile | Avg yearly return | Volatility | Worst fall | 2008 crisis | 2020 COVID | 2022 rate shock |
+|---|---|---|---|---|---|---|
+| Conservative | 4.0% | 4.6% | −13.1% | −6.5% | −7.6% | −13.0% |
+| Moderately Conservative | 5.5% | 7.2% | −22.5% | −18.9% | −14.4% | −16.8% |
+| Moderate | 6.9% | 10.1% | −33.9% | −31.2% | −21.2% | −20.6% |
+| Growth | 8.2% | 13.8% | −46.6% | −47.2% | −29.6% | −24.3% |
+
+**Key finding:** the Conservative portfolio lost *more* in 2022 than in 2008. In 2008 bonds
+rose while stocks crashed; in 2022 rising rates pushed bonds down with stocks, exactly what
+duration predicts. Bonds protect against most crashes, but not against a rate shock.
+
+Past results don't predict future returns. Crisis figures assume buying at the peak and
+holding to the bottom, before fees and taxes.
+
 ## Run it
 
 ```bash
