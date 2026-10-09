@@ -27,13 +27,24 @@ SNAPSHOT = Path(__file__).resolve().parent.parent / "data" / "prices.csv"
 MUST_START_BY = pd.Timestamp("2007-10-09")
 
 
+def _end_date() -> str:
+    """
+    yfinance's `end` is exclusive. Include today only once the US market has
+    closed (New York time), so an unfinished trading day is never saved as
+    if it were a closing price.
+    """
+    from zoneinfo import ZoneInfo
+    now = pd.Timestamp.now(tz=ZoneInfo("America/New_York"))
+    closed = now.hour > 16 or (now.hour == 16 and now.minute >= 30)
+    end = now.normalize() + pd.Timedelta(days=1 if closed else 0)
+    return end.strftime("%Y-%m-%d")
+
+
 def _download(symbols, start):
     import logging, contextlib, io
     import yfinance as yf   # imported here so the rest works without it
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
-    # `end` is exclusive: stop at yesterday so today's unfinished trading
-    # day is never saved as if it were a closing price.
-    end = pd.Timestamp.today().strftime("%Y-%m-%d")
+    end = _end_date()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         raw = yf.download(symbols, start=start, end=end, auto_adjust=True,
                           progress=False, threads=False)

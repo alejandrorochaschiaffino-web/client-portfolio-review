@@ -304,15 +304,17 @@ def test_splice_rejects_empty_download():
 
 
 @needs_data
-def test_readme_results_table_matches_the_code():
+def test_readme_crisis_results_match_the_code():
+    # Crisis windows are fixed in the past, so these README figures must always
+    # match. (Long-run averages and dollar values drift as new prices arrive.)
     from pathlib import Path
     from portfolio_tool.risk import run_stress_tests
     readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
     prices = load_snapshot()
-    fmt = lambda x: f"{x:.1%}".replace("-", "−")
+    fmt = lambda x: f"{x:.1%}".replace("-", "\u2212")
     for name, w in MODEL_PORTFOLIOS.items():
-        s = portfolio_stats(prices, w)
         crises = [r["return"] for r in run_stress_tests(prices, w, 1).values()]
-        row = f"| {name} | " + " | ".join(fmt(x) for x in
-              [s["annual_return"], s["volatility"], s["max_drawdown"], *crises]) + " |"
-        assert row in readme, f"README row out of date: {row}"
+        results = readme.split("## Results", 1)[1]
+        row = next(line for line in results.splitlines() if line.startswith(f"| {name} | "))
+        assert row.rstrip().endswith(" | ".join(fmt(x) for x in crises) + " |"), \
+            f"README crisis figures out of date for {name}: {row}"
