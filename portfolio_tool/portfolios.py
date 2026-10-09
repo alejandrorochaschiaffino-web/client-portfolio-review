@@ -18,6 +18,12 @@ FUNDS = {
              "asset_class": "Cash & T-Bills"},
 }
 
+# Average duration (years) of the bond and cash funds, used for rate shocks.
+# BND: 5.8 years per Vanguard's fact sheet as of June 30, 2026.
+# SGOV holds 0-3 month T-bills, so its duration is about 0.1 years.
+# Stock funds have no bond duration; rate shocks here cover bonds and cash only.
+FUND_DURATIONS = {"BND": 5.8, "SGOV": 0.1}
+
 # Weight of each fund, by profile (fractions that sum to 1.0).
 MODEL_PORTFOLIOS = {
     "Conservative": {
