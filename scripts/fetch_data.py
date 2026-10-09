@@ -16,10 +16,16 @@ from portfolio_tool.data import fetch_prices, load_snapshot, SNAPSHOT  # noqa: E
 
 prices = fetch_prices().round(4)
 
+old = None
 if SNAPSHOT.exists():
-    old = load_snapshot()
-    same_days = old.index.equals(prices.index)
-    if same_days and ((prices - old[prices.columns]).abs() / old[prices.columns]).max().max() < 1e-4:
+    try:
+        old = load_snapshot(SNAPSHOT)
+    except Exception as e:                     # damaged file: replace it with good data
+        print(f"Existing snapshot is unreadable ({e}); replacing it.")
+
+if old is not None and old.index.equals(prices.index):
+    change = ((prices - old[prices.columns]).abs() / old[prices.columns]).max().max()
+    if change < 1e-4:
         print(f"No new data (still through {prices.index[-1]:%Y-%m-%d}); snapshot unchanged.")
         sys.exit(0)
 

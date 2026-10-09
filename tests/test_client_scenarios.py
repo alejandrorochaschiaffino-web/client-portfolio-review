@@ -318,3 +318,28 @@ def test_readme_crisis_results_match_the_code():
         row = next(line for line in results.splitlines() if line.startswith(f"| {name} | "))
         assert row.rstrip().endswith(" | ".join(fmt(x) for x in crises) + " |"), \
             f"README crisis figures out of date for {name}: {row}"
+
+
+def test_month_ending_on_a_market_holiday_counts_as_finished():
+    from portfolio_tool.risk import _month_finished
+    assert _month_finished(pd.Timestamp("2024-03-28"))      # Good Friday Mar 29, 2024
+    assert _month_finished(pd.Timestamp("2027-05-28"))      # Memorial Day May 31, 2027
+    assert _month_finished(pd.Timestamp("2026-09-30"))      # ordinary month end
+    assert not _month_finished(pd.Timestamp("2026-10-09"))  # mid-month
+    assert not _month_finished(pd.Timestamp("2024-03-27"))  # a trading day (Mar 28) still left
+
+
+def test_fetch_script_replaces_a_damaged_snapshot(tmp_path, monkeypatch):
+    import runpy
+    import portfolio_tool.data as data
+    good = load_snapshot() if SNAPSHOT.exists() else None
+    if good is None:
+        pytest.skip("no price snapshot yet")
+    bad = tmp_path / "prices.csv"
+    bad.write_text("Date,VTI\n2007-06-01,1\n")
+    monkeypatch.setattr(data, "SNAPSHOT", bad)
+    monkeypatch.setattr(data, "fetch_prices", lambda: good)
+    from pathlib import Path
+    script = Path(__file__).resolve().parent.parent / "scripts" / "fetch_data.py"
+    runpy.run_path(str(script), run_name="__main__")
+    assert len(data.load_snapshot(bad)) == len(good)

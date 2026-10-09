@@ -15,6 +15,9 @@ each other (the worst fall, each crisis loss, recovery times, etc.).
 import math
 import numpy as np
 import pandas as pd
+from pandas.tseries.holiday import (AbstractHolidayCalendar, GoodFriday, Holiday,
+                                    USLaborDay, USMartinLutherKingJr, USMemorialDay,
+                                    USPresidentsDay, USThanksgivingDay, nearest_workday)
 
 # Market peak -> bottom for each crisis (S&P 500 dates).
 SCENARIOS = {
@@ -58,6 +61,28 @@ def portfolio_index(prices: pd.DataFrame, weights: dict,
     return pd.Series(values, index=px.index)
 
 
+class _NYSEHolidays(AbstractHolidayCalendar):
+    """US stock market holidays (enough to tell when a month has really ended)."""
+    rules = [
+        Holiday("New Year's Day", month=1, day=1, observance=nearest_workday),
+        USMartinLutherKingJr, USPresidentsDay, GoodFriday, USMemorialDay,
+        Holiday("Juneteenth", month=6, day=19, start_date="2022-01-01", observance=nearest_workday),
+        Holiday("Independence Day", month=7, day=4, observance=nearest_workday),
+        USLaborDay, USThanksgivingDay,
+        Holiday("Christmas", month=12, day=25, observance=nearest_workday),
+    ]
+
+
+def _month_finished(last: pd.Timestamp) -> bool:
+    """True if no trading days are left in `last`'s month after `last`."""
+    month_end = last + pd.offsets.MonthEnd(0)
+    remaining = pd.bdate_range(last + pd.Timedelta(days=1), month_end)
+    if len(remaining) == 0:
+        return True
+    holidays = _NYSEHolidays().holidays(remaining[0], remaining[-1])
+    return remaining.difference(holidays).empty
+
+
 def month_end_values(index: pd.Series) -> pd.Series:
     """
     Month-end values, starting with the very first value so the first
@@ -65,7 +90,7 @@ def month_end_values(index: pd.Series) -> pd.Series:
     """
     monthly = index.resample("ME").last()
     last = index.index[-1]
-    if last < last + pd.offsets.BMonthEnd(0):           # month still in progress
+    if not _month_finished(last):                       # month still in progress
         monthly = monthly.iloc[:-1]
     first_month = index.index.to_period("M") == index.index[0].to_period("M")
     if first_month.sum() > 1:                           # start isn't already a month-end
