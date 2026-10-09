@@ -23,10 +23,17 @@ START = "2007-06-01"
 SNAPSHOT = Path(__file__).resolve().parent.parent / "data" / "prices.csv"
 
 
+# The data must reach back before the first stress test (Oct 9, 2007).
+MUST_START_BY = pd.Timestamp("2007-10-09")
+
+
 def _download(symbols, start):
+    import logging, contextlib, io
     import yfinance as yf   # imported here so the rest works without it
-    raw = yf.download(symbols, start=start, auto_adjust=True,
-                      progress=False, threads=False)
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        raw = yf.download(symbols, start=start, auto_adjust=True,
+                          progress=False, threads=False)
     closes = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
     return closes.dropna(how="all")
 
@@ -53,9 +60,21 @@ def fetch_prices(start: str = START) -> pd.DataFrame:
             series = splice(series, closes[PROXIES[t]])
         out[t] = series
     prices = pd.DataFrame(out).dropna()
+    check_prices(prices)
+    return prices
+
+
+def check_prices(prices: pd.DataFrame) -> None:
+    """Refuse incomplete data, e.g. if one stand-in fund failed to download."""
     if prices.empty:
         raise RuntimeError("Download returned no usable prices")
-    return prices
+    missing = [t for t in TICKERS if t not in prices.columns]
+    if missing:
+        raise RuntimeError(f"Missing funds: {missing}")
+    if prices.index[0] > MUST_START_BY:
+        raise RuntimeError(f"History starts {prices.index[0]:%Y-%m-%d}, too late for the 2008 test")
+    if (pd.Timestamp.today() - prices.index[-1]).days > 10:
+        raise RuntimeError(f"Latest price is {prices.index[-1]:%Y-%m-%d}, more than 10 days old")
 
 
 def load_snapshot(path: Path = SNAPSHOT) -> pd.DataFrame:

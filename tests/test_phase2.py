@@ -81,6 +81,21 @@ def test_splice_joins_proxy_history():
     assert out.iloc[1] / out.iloc[0] == pytest.approx(11 / 10)  # proxy returns kept
 
 
+def test_incomplete_download_is_rejected():
+    from portfolio_tool.data import check_prices
+    late = fake_prices().loc["2011-01-03":]          # e.g. a stand-in fund failed
+    with pytest.raises(RuntimeError):
+        check_prices(late)
+    with pytest.raises(RuntimeError):
+        check_prices(fake_prices().drop(columns="SGOV"))
+
+
+def test_stress_test_refuses_dates_before_the_data():
+    late = fake_prices().loc["2011-01-03":]
+    with pytest.raises(ValueError):
+        stress_test(late, {"VTI": 1.0}, 1000, "2007-10-09", "2009-03-09")
+
+
 # ---------- Real data checks (run once data/prices.csv exists) ----------
 
 needs_data = pytest.mark.skipif(not SNAPSHOT.exists(), reason="no price snapshot yet")

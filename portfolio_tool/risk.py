@@ -46,8 +46,12 @@ def portfolio_stats(prices: pd.DataFrame, weights: dict) -> dict:
 
 
 def _nearest(prices: pd.DataFrame, date: str) -> pd.Timestamp:
-    """First trading day on or after `date`."""
-    return prices.index[prices.index.searchsorted(pd.Timestamp(date))]
+    """First trading day on or after `date`. Refuses dates outside the data."""
+    ts = pd.Timestamp(date)
+    if ts < prices.index[0] or ts > prices.index[-1]:
+        raise ValueError(f"{date} is outside the price history "
+                         f"({prices.index[0]:%Y-%m-%d} to {prices.index[-1]:%Y-%m-%d})")
+    return prices.index[prices.index.searchsorted(ts)]
 
 
 def stress_test(prices: pd.DataFrame, weights: dict, amount: float,
