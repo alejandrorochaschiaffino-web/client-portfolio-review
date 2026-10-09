@@ -9,6 +9,7 @@ Risk analytics on real price history.
 """
 
 import math
+import numpy as np
 import pandas as pd
 
 # Market peak -> bottom for each crisis (S&P 500 dates).
@@ -29,6 +30,28 @@ def max_drawdown(values: pd.Series) -> float:
     """Worst fall from a previous high, as a negative fraction (e.g. -0.35)."""
     running_peak = values.cummax()
     return float((values / running_peak - 1).min())
+
+
+def portfolio_index(prices: pd.DataFrame, weights: dict,
+                    start=None, end=None) -> pd.Series:
+    """
+    Daily value of $1 invested at `start`, rebalanced back to the target
+    weights on the first trading day of every month.
+    """
+    cols = [t for t, w in weights.items() if w > 0]
+    target = np.array([weights[t] for t in cols])
+    px = prices.loc[start:end, cols]
+    arr = px.to_numpy()
+    months = px.index.to_period("M")
+    values = np.empty(len(px))
+    value, shares = 1.0, None
+    for i in range(len(px)):
+        if shares is None or months[i] != months[i - 1]:
+            if shares is not None:
+                value = float(shares @ arr[i])      # value before rebalancing
+            shares = target * value / arr[i]        # rebalance to target
+        values[i] = float(shares @ arr[i])
+    return pd.Series(values, index=px.index)
 
 
 def portfolio_stats(prices: pd.DataFrame, weights: dict) -> dict:
