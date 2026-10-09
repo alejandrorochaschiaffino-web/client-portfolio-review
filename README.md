@@ -114,11 +114,13 @@ each week.
    terminal demo and the letter all read from it, so they can't disagree.
 3. **Bilingual client letter.** A built-in template writes the review in English or Spanish
    from the analysis, for free, every time.
-4. **Optional AI letter, with a safety check.** With an `ANTHROPIC_API_KEY`, Claude (Haiku)
-   rewrites the letter in a warmer voice. The tool then compares every number in the AI's
-   letter with the numbers in the analysis. If the AI changed or invented even one number,
-   its letter is discarded and the template is shown instead. Limited to 5 AI letters per
-   visitor session to keep costs near zero.
+4. **Optional AI personal touch, never touching a number.** With an `ANTHROPIC_API_KEY`,
+   Claude (Haiku) writes only two number-free passages: a personal opening and an
+   "In plain terms" summary. Every sentence with a figure stays exactly as the analysis wrote
+   it. Each AI passage is rejected if it contains a digit, a number word (English or Spanish),
+   a currency or percent sign, or a promise about returns ("guarantee", "will grow"), and the
+   plain template is used instead. Capped at 5 uses per visitor and 100 per day, so the API
+   cost stays at cents.
 
 ## Run it
 
@@ -144,7 +146,7 @@ portfolio_tool/
   duration.py        bond duration and the rate-shock test
   client_scenarios.py  recovery time, panic-selling cost, retirement timing risk
   review.py          runs every analysis for one client
-  report.py          bilingual client letter (template + AI with number check)
+  report.py          bilingual client letter (template + number-free AI passages)
   i18n.py            English/Spanish text
 scripts/fetch_data.py  downloads fresh prices
 data/prices.csv      saved price snapshot

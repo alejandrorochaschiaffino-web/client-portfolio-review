@@ -7,7 +7,9 @@ Optional:      set ANTHROPIC_API_KEY (env var or Streamlit secret) to enable
                built-in bilingual template, so it always works for free.
 """
 
+import datetime as dt
 import os
+import threading
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,12 +19,13 @@ from portfolio_tool import data
 from portfolio_tool.i18n import (ASSET_CLASSES, CRISIS_NAMES, CRISIS_NOTES,
                                  PROFILE_DESCRIPTIONS, PROFILE_NAMES, question_text)
 from portfolio_tool.profiles import QUESTIONS
-from portfolio_tool.report import ai_report, template_report, usd
+from portfolio_tool.report import ai_report, escape_dollars, template_report, usd
 from portfolio_tool.review import build_review
 from portfolio_tool.sample_clients import SAMPLE_CLIENTS
 
 REPO_URL = "https://github.com/alejandrorochaschiaffino-web/client-portfolio-review"
-MAX_AI_LETTERS = 5          # per visitor session, keeps API costs tiny
+MAX_AI_LETTERS = 5          # per visitor session
+MAX_AI_PER_DAY = 100        # across all visitors; together these cap API cost at cents a day
 
 # Validated categorical palette, fixed order (blue, orange, aqua, yellow).
 ASSET_COLORS = {"US Stocks": "#2a78d6", "International Stocks": "#eb6834",
@@ -33,7 +36,7 @@ UI = {
     "en": {
         "title": "Client Portfolio Review",
         "subtitle": "Answer seven questions to see a recommended portfolio, how it held up in real crises, and a client letter in English or Spanish.",
-        "language": "Language", "sample": "Start from a sample client", "custom": "Custom client",
+        "language": "Language", "sample": "Start from a sample client", "reload": "Reload sample answers",
         "name": "Client name", "amount": "Amount to invest ($)", "questions": "Investor questionnaire",
         "tabs": ["Overview", "Crisis stress tests", "Client questions", "Interest rates", "Client letter"],
         "profile": "Recommended profile", "score": "Risk score: {score} / 28",
@@ -42,7 +45,7 @@ UI = {
         "ann_help": "Compound growth rate per year, Jun 2007 to today, rebalanced monthly.",
         "vol_help": "Typical yearly swing: volatility of monthly returns, annualized.",
         "worst_help": "Largest drop from a previous high, using daily values.",
-        "alloc": "Allocation", "holdings": "Holdings",
+        "alloc": "Asset allocation", "holdings": "Holdings",
         "fund": "Fund", "class": "Asset class", "weight": "Weight", "dollars": "Amount",
         "crisis_title": "What this portfolio did in three real crises",
         "crisis_sub": "Invested at the market peak, measured at the market bottom. Dollar figures use this client's amount.",
@@ -54,16 +57,17 @@ UI = {
         "seq_title": "\"Does it matter when a crash happens if I'm retired?\"",
         "seq_sub": "Withdrawing {wd} a year for 10 years. Same monthly returns, same average; only the order differs.",
         "crash_first": "Crash at the start (retired late 2007)", "crash_last": "Same returns, crash at the end",
-        "years": "Years into retirement", "balance": "Balance ($)",
+        "years": "Years into retirement", "yrs": "years", "balance": "Balance ($)",
         "seq_result": "Timing alone made a **{diff}** difference: **{first}** left vs. **{last}**.",
         "rates_title": "If interest rates change",
         "rates_sub": "Bond price change ≈ −duration × change in rates. BND's average duration is 5.8 years; SGOV's about 0.1. Covers the bond and cash part of the portfolio.",
-        "rate_change": "Change in rates", "value_change": "Change in value ($)",
-        "letter_title": "Client letter", "write_ai": "Rewrite with AI (Claude)",
-        "ai_on": "AI-written letter. Every number was checked against the analysis.",
-        "ai_off": "Template letter. Add an Anthropic API key to enable the AI-written version.",
-        "ai_fallback": "The AI letter didn't pass the number check (or the API was unavailable), so the template is shown.",
-        "ai_limit": "AI letter limit reached for this session.",
+        "rate_change": "Change in rates", "value_change": "Change in value ($)", "pt": "pt",
+        "letter_title": "Client letter", "write_ai": "Add a personal touch with AI (Claude)",
+        "ai_on": "Claude wrote the opening and the \"In plain terms\" section. It is not allowed to write numbers: every figure comes straight from the analysis.",
+        "ai_ready": "Template letter. The AI button adds a personal opening and a plain-language summary; it never changes a number.",
+        "ai_off": "Template letter. Add an Anthropic API key to enable the AI personal touch.",
+        "ai_fallback": "The AI text didn't pass the safety checks (or the API was unavailable), so the letter was not changed.",
+        "ai_limit": "AI limit reached ({n} per session, or the daily limit for the demo).",
         "download": "Download letter (.md)",
         "no_data": "Market data is unavailable right now, so only the allocation and rate shocks are shown.",
         "footer": "Educational project, not investment advice. Prices: {source}. Past results don't guarantee future returns; figures are before fees and taxes. [Source code]({url})",
@@ -71,17 +75,17 @@ UI = {
     "es": {
         "title": "Revisión de portafolio para clientes",
         "subtitle": "Responda siete preguntas para ver un portafolio recomendado, cómo resistió crisis reales y una carta para el cliente en inglés o español.",
-        "language": "Idioma", "sample": "Empezar con un cliente de ejemplo", "custom": "Cliente personalizado",
+        "language": "Idioma", "sample": "Empezar con un cliente de ejemplo", "reload": "Restaurar respuestas del ejemplo",
         "name": "Nombre del cliente", "amount": "Monto a invertir ($)", "questions": "Cuestionario del inversionista",
-        "tabs": ["Resumen", "Pruebas de crisis", "Preguntas del cliente", "Tasas de interés", "Carta al cliente"],
+        "tabs": ["Resumen", "Pruebas de estrés", "Preguntas del cliente", "Tasas de interés", "Carta al cliente"],
         "profile": "Perfil recomendado", "score": "Puntaje de riesgo: {score} / 28",
         "capped": "Las respuestas por sí solas indican **{score_profile}**, pero el dinero se necesitará pronto, así que el perfil se limita a **{profile}** (idoneidad: poco tiempo para recuperarse de una pérdida).",
         "ann": "Rendimiento anualizado", "vol": "Volatilidad", "worst": "Peor caída", "stocks": "En acciones",
         "ann_help": "Tasa de crecimiento compuesta por año, de junio de 2007 a hoy, con rebalanceo mensual.",
         "vol_help": "Altibajo anual típico: volatilidad de los rendimientos mensuales, anualizada.",
         "worst_help": "Mayor caída desde un máximo previo, con valores diarios.",
-        "alloc": "Distribución", "holdings": "Inversiones",
-        "fund": "Fondo", "class": "Tipo de activo", "weight": "Porcentaje", "dollars": "Monto",
+        "alloc": "Asignación de activos", "holdings": "Inversiones",
+        "fund": "Fondo", "class": "Clase de activo", "weight": "Porcentaje", "dollars": "Monto",
         "crisis_title": "Qué hizo este portafolio en tres crisis reales",
         "crisis_sub": "Invertido en el punto máximo del mercado, medido en el punto más bajo. Las cifras en dólares usan el monto de este cliente.",
         "crisis": "Crisis", "loss": "Pérdida", "loss_usd": "Pérdida ($)", "back": "Recuperación", "note": "Qué pasó",
@@ -92,16 +96,17 @@ UI = {
         "seq_title": "\"¿Importa cuándo ocurre una caída si estoy jubilado?\"",
         "seq_sub": "Retirando {wd} al año durante 10 años. Mismos rendimientos mensuales, mismo promedio; solo cambia el orden.",
         "crash_first": "Caída al inicio (jubilación a fines de 2007)", "crash_last": "Mismos rendimientos, caída al final",
-        "years": "Años de jubilación", "balance": "Saldo ($)",
+        "years": "Años de jubilación", "yrs": "años", "balance": "Saldo ($)",
         "seq_result": "Solo el momento de la caída marcó una diferencia de **{diff}**: quedan **{first}** frente a **{last}**.",
         "rates_title": "Si cambian las tasas de interés",
         "rates_sub": "Cambio en el precio de un bono ≈ −duración × cambio en las tasas. La duración promedio de BND es 5.8 años; la de SGOV, cerca de 0.1. Cubre la parte de bonos y efectivo.",
-        "rate_change": "Cambio en las tasas", "value_change": "Cambio de valor ($)",
-        "letter_title": "Carta al cliente", "write_ai": "Reescribir con IA (Claude)",
-        "ai_on": "Carta escrita con IA. Cada cifra se verificó contra el análisis.",
-        "ai_off": "Carta de plantilla. Agregue una clave de API de Anthropic para activar la versión escrita con IA.",
-        "ai_fallback": "La carta de IA no pasó la verificación de cifras (o la API no estaba disponible), así que se muestra la plantilla.",
-        "ai_limit": "Se alcanzó el límite de cartas con IA para esta sesión.",
+        "rate_change": "Cambio en las tasas", "value_change": "Cambio de valor ($)", "pt": "pt",
+        "letter_title": "Carta al cliente", "write_ai": "Agregar un toque personal con IA (Claude)",
+        "ai_on": "Claude escribió la introducción y la sección \"En pocas palabras\". No puede escribir cifras: cada número viene directamente del análisis.",
+        "ai_ready": "Carta de plantilla. El botón de IA agrega una introducción personal y un resumen sencillo; nunca cambia una cifra.",
+        "ai_off": "Carta de plantilla. Agregue una clave de API de Anthropic para activar el toque personal con IA.",
+        "ai_fallback": "El texto de la IA no pasó los controles de seguridad (o la API no estaba disponible), así que la carta no cambió.",
+        "ai_limit": "Se alcanzó el límite de IA ({n} por sesión, o el límite diario de la demostración).",
         "download": "Descargar carta (.md)",
         "no_data": "Los datos de mercado no están disponibles ahora; solo se muestran la distribución y los cambios de tasas.",
         "footer": "Proyecto educativo, no es asesoría de inversión. Precios: {source}. Los resultados pasados no garantizan rendimientos futuros; las cifras son antes de comisiones e impuestos. [Código fuente]({url})",
@@ -123,12 +128,40 @@ def load_prices():
         return None, "unavailable"
 
 
+@st.cache_data(max_entries=200, show_spinner=False)
+def cached_review(name, answers_items, amount, data_version, _prices):
+    """build_review() is the slow part; reruns with the same inputs reuse it."""
+    return build_review(name, dict(answers_items), amount, _prices)
+
+
+@st.cache_resource
+def ai_counter():
+    """Shared by every visitor of this server: today's date and AI calls so far."""
+    return {"day": None, "count": 0, "lock": threading.Lock()}
+
+
+def take_ai_slot() -> bool:
+    c = ai_counter()
+    with c["lock"]:
+        today = dt.date.today()
+        if c["day"] != today:
+            c["day"], c["count"] = today, 0
+        if c["count"] >= MAX_AI_PER_DAY:
+            return False
+        c["count"] += 1
+        return True
+
+
 def api_key():
     try:
         key = st.secrets.get("ANTHROPIC_API_KEY")
     except Exception:
         key = None
     return key or os.environ.get("ANTHROPIC_API_KEY")
+
+
+def signed_usd(x):
+    return "+" + usd(x) if round(x) > 0 else usd(x)
 
 
 def style(fig, height=360):
@@ -159,7 +192,7 @@ def apply_sample():
             _clear_answer_widgets()
 
 
-st.set_page_config(page_title="Client Portfolio Review", layout="wide")
+st.set_page_config(page_title="Client Portfolio Review", layout="wide", initial_sidebar_state="expanded")
 
 if "name" not in st.session_state:
     st.session_state.sample = SAMPLE_CLIENTS[2]["name"]
@@ -170,7 +203,8 @@ with st.sidebar:
     lang = "es" if lang_label == "Español" else "en"
     t = UI[lang]
     st.selectbox(t["sample"], [c["name"] for c in SAMPLE_CLIENTS], key="sample", on_change=apply_sample)
-    name = st.text_input(t["name"], key="name")
+    st.button(t["reload"], on_click=apply_sample, key="reload")
+    name = st.text_input(t["name"], key="name", max_chars=80)
     amount = st.number_input(t["amount"], min_value=1000.0, max_value=100_000_000.0,
                              step=5000.0, format="%.0f", key="amount")
     st.subheader(t["questions"])
@@ -186,7 +220,8 @@ with st.sidebar:
 # ------------------------------------------------------------------ analysis
 
 prices, source = load_prices()
-review = build_review(name, answers, amount, prices)
+data_version = (source, str(prices.index[-1])) if prices is not None else None
+review = cached_review(name, tuple(sorted(answers.items())), amount, data_version, prices)
 profile = PROFILE_NAMES[lang][review["profile"]]
 
 st.title(t["title"])
@@ -285,21 +320,22 @@ with tabs[2]:
 
         seq = review["sequence"]
         st.markdown(f"#### {t['seq_title']}")
-        st.caption(t["seq_sub"].format(wd=usd(seq["yearly_withdrawal"])))
+        st.caption(escape_dollars(t["seq_sub"].format(wd=usd(seq["yearly_withdrawal"]))))
         fig = go.Figure()
         for key, label, color in (("crash_last", t["crash_last"], BLUE),
                                   ("crash_first", t["crash_first"], ORANGE)):
             path = seq[key]["path"]
             fig.add_trace(go.Scatter(x=[m / 12 for m in range(len(path))], y=path, name=label,
                                      mode="lines", line=dict(color=color, width=2),
-                                     hovertemplate="%{x:.1f}: $%{y:,.0f}<extra>" + label + "</extra>"))
+                                     hovertemplate="%{x:.1f} " + t["yrs"] + ": $%{y:,.0f}<extra>"
+                                                   + label + "</extra>"))
         fig.update_layout(hovermode="x unified")
         fig.update_xaxes(title=t["years"], dtick=1)
         fig.update_yaxes(title=t["balance"], tickformat="$,.0f")
         st.plotly_chart(style(fig, 380), width="stretch", theme="streamlit")
-        st.markdown(t["seq_result"].format(diff=usd(abs(seq["difference"])),
-                                           first=usd(seq["crash_first"]["ending"]),
-                                           last=usd(seq["crash_last"]["ending"])))
+        st.markdown(escape_dollars(t["seq_result"].format(diff=usd(abs(seq["difference"])),
+                                                          first=usd(seq["crash_first"]["ending"]),
+                                                          last=usd(seq["crash_last"]["ending"]))))
     else:
         st.info(t["no_data"])
 
@@ -310,9 +346,9 @@ with tabs[3]:
     shocks = review["rate_shocks"]
     order = [-0.01, 0.01, 0.02]
     fig = go.Figure(go.Bar(
-        x=[f"{c:+.0%}" for c in order], y=[shocks[c]["total_dollar_change"] for c in order],
+        x=[f"{c * 100:+.0f} {t['pt']}" for c in order], y=[shocks[c]["total_dollar_change"] for c in order],
         marker=dict(color=BLUE, cornerradius=4),
-        text=[usd(shocks[c]["total_dollar_change"]) for c in order], textposition="outside",
+        text=[signed_usd(shocks[c]["total_dollar_change"]) for c in order], textposition="outside",
         cliponaxis=False, hovertemplate="%{x}: %{text}<extra></extra>"))
     fig.update_xaxes(title=t["rate_change"], type="category")
     fig.update_yaxes(title=t["value_change"], tickformat="$,.0f", zeroline=True)
@@ -323,27 +359,36 @@ with tabs[4]:
     st.markdown(f"#### {t['letter_title']}")
     letter_key = (name, amount, tuple(sorted(answers.items())), lang, str(review.get("data_through")))
     letters = st.session_state.setdefault("letters", {})
-    used = st.session_state.setdefault("ai_used", 0)
     letter, source_kind = letters.get(letter_key, (template_report(review, lang), "template"))
 
     key = api_key()
     if key:
-        if st.button(t["write_ai"], disabled=used >= MAX_AI_LETTERS):
-            with st.spinner("..."):
-                letter, source_kind = ai_report(review, lang, api_key=key)
-            st.session_state.ai_used = used + 1
-            letters[letter_key] = (letter, source_kind)
-            if source_kind != "ai":
-                st.warning(t["ai_fallback"])
-        if used >= MAX_AI_LETTERS:
-            st.caption(t["ai_limit"])
-    st.caption(t["ai_on"] if source_kind == "ai" else t["ai_off"] if not key else "")
+        used = st.session_state.get("ai_used", 0)
+        if st.button(t["write_ai"], key="ai_btn", disabled=used >= MAX_AI_LETTERS or source_kind == "ai"):
+            if take_ai_slot():
+                st.session_state.ai_used = used + 1
+                with st.spinner("Claude..."):
+                    new_letter, new_kind = ai_report(review, lang, api_key=key)
+                if new_kind == "ai":
+                    letters[letter_key] = (new_letter, new_kind)
+                else:
+                    st.session_state.ai_notice = "ai_fallback"
+            else:
+                st.session_state.ai_notice = "ai_limit"
+            st.rerun()                         # redraw with the new letter and counts
+        notice = st.session_state.pop("ai_notice", None)
+        if notice:
+            st.warning(t[notice].format(n=MAX_AI_LETTERS))
+        elif used >= MAX_AI_LETTERS:
+            st.caption(t["ai_limit"].format(n=MAX_AI_LETTERS))
+    st.caption(t["ai_on"] if source_kind == "ai" else t["ai_ready"] if key else t["ai_off"])
     st.download_button(t["download"], letter, file_name=f"portfolio_review_{lang}.md",
                        mime="text/markdown")
+    safe = escape_dollars(letter)              # on screen, "$" would otherwise start a LaTeX formula
     with st.container(border=True):
         shown = "\n".join(("#### " + line[3:]) if line.startswith("## ") else
                            ("### " + line[2:]) if line.startswith("# ") else line
-                           for line in letter.splitlines())
+                           for line in safe.splitlines())
         st.markdown(shown)
 
 st.divider()
