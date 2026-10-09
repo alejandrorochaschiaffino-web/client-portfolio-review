@@ -91,7 +91,7 @@ On $100,000 in the Growth portfolio (values as of Oct 9, 2026):
 |---|---|---|---|---|
 | 2008 Financial Crisis | 53 months (Mar 2012) | $469,563 | $281,140 | $188,423 |
 | 2020 COVID Crash | 6 months (Aug 2020) | $204,743 | $122,098 | $82,646 |
-| 2022 Rate Shock | 25 months (Feb 2024) | $152,249 | $134,724 | $17,524 |
+| 2022 Rate Shock | 25 months (Feb 2024) | $152,248 | $134,724 | $17,524 |
 
 **Retirement timing:** a $500,000 Growth portfolio withdrawing $25,000 a year from Nov 2007 to
 Oct 2017 ends with **$451,949** when the crash comes first, but **$597,361** with the same
