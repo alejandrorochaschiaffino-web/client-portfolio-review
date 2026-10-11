@@ -38,7 +38,7 @@ def months(x: float) -> str:
 TEXT = {
     "en": {
         "title": "Your Portfolio Review",
-        "dear": "Dear {name},",
+        "dear": "Dear {name},", "client": "Client",
         "intro": "Thank you for completing your investor questionnaire. Here is a summary of the portfolio that fits your situation, how it has behaved in past markets, and what to expect.",
         "h_profile": "Your investor profile",
         "profile": "Your answers scored **{score} out of 28**, which places you in the **{profile}** profile. {desc}",
@@ -67,7 +67,7 @@ TEXT = {
     },
     "es": {
         "title": "Revisión de su portafolio",
-        "dear": "Estimado/a {name}:",
+        "dear": "Estimado/a {name}:", "client": "cliente",
         "intro": "Gracias por completar su cuestionario de inversionista. A continuación encontrará un resumen del portafolio que se ajusta a su situación, cómo se ha comportado en mercados pasados y qué puede esperar.",
         "h_profile": "Su perfil de inversionista",
         "profile": "Sus respuestas sumaron **{score} de 28** puntos, con lo cual su perfil es **{profile}**. {desc}",
@@ -108,6 +108,14 @@ def _date(ts, lang):
     return f"{ts.day} de {MONTHS_ES[ts.month - 1]} de {ts.year}" if lang == "es" else f"{ts:%b} {ts.day}, {ts.year}"
 
 
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]<>#|~])")
+
+
+def md_escape(text: str) -> str:
+    """Make user-typed text (the client name) show literally inside Markdown."""
+    return _MD_SPECIAL.sub(r"\\\1", text)
+
+
 def template_report(review: dict, lang: str = "en", opening: str | None = None,
                     summary: str | None = None) -> str:
     """
@@ -118,7 +126,7 @@ def template_report(review: dict, lang: str = "en", opening: str | None = None,
     t = TEXT[lang]
     profile = PROFILE_NAMES[lang][review["profile"]]
     key = "profile_capped" if review["capped"] else "profile"
-    lines = [f"# {t['title']}", "", t["dear"].format(name=review["name"]), "",
+    lines = [f"# {t['title']}", "", t["dear"].format(name=md_escape(review["name"]) or t["client"]), "",
              opening or t["intro"], "", f"## {t['h_profile']}", "",
              t[key].format(score=review["score"], profile=profile,
                            score_profile=PROFILE_NAMES[lang][review["score_profile"]],
@@ -355,6 +363,9 @@ def ai_report(review: dict, lang: str = "en", api_key: str | None = None,
         if reason:
             log.warning("AI letter: %s rejected (%s)", label, reason)
             return draft, "template"
+    name = review["name"]
+    if name:                                    # the name was exempt from the symbol check
+        opening, summary = (p.replace(name, md_escape(name)) for p in (opening, summary))
     return template_report(review, lang, opening=opening.strip(), summary=summary.strip()), "ai"
 
 

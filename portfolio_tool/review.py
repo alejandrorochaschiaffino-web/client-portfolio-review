@@ -18,7 +18,7 @@ def build_review(name: str, answers: dict, amount: float, prices=None) -> dict:
     weights = MODEL_PORTFOLIOS[result.profile]
 
     review = {
-        "name": name or "Client",
+        "name": (name or "").strip(),       # blank -> each language's own word for "client"
         "amount": amount,
         "answers": dict(answers),
         "score": result.score,

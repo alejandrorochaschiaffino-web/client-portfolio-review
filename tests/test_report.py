@@ -217,3 +217,26 @@ def test_promises_and_numbers_are_caught(lang, text):
 ])
 def test_normal_disclaimer_wording_is_allowed(lang, text):
     assert unsafe_reason(text, lang) is None
+
+
+@pytest.mark.parametrize("raw", ["", "   ", None])
+def test_blank_name_uses_each_languages_own_word(raw):
+    c = SAMPLE_CLIENTS[2]
+    r = build_review(raw, c["answers"], c["amount"])
+    assert "Dear Client," in template_report(r, "en")
+    assert "Estimado/a cliente:" in template_report(r, "es")
+
+
+def test_client_name_shows_literally_in_markdown():
+    c = SAMPLE_CLIENTS[2]
+    r = build_review("  *Ana* [x](http://x.com) <b>  ", c["answers"], c["amount"])
+    text = template_report(r, "en")
+    assert "Dear \\*Ana\\* \\[x\\](http://x.com) \\<b\\>," in text
+
+
+def test_ai_passage_keeps_a_markdown_name_literal():
+    c = SAMPLE_CLIENTS[2]
+    r = build_review("Ana_Lee", c["answers"], c["amount"])
+    text, source = ai_report(r, "en", client=FakeClient(reply(
+        "Thank you, Ana_Lee, for sharing your goals with me.", "A calm, steady plan.")))
+    assert source == "ai" and "Thank you, Ana\\_Lee," in text

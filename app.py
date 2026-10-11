@@ -8,6 +8,7 @@ Optional:      set ANTHROPIC_API_KEY (env var or Streamlit secret) to enable
 """
 
 import datetime as dt
+import inspect
 import os
 import threading
 
@@ -70,6 +71,7 @@ UI = {
         "ai_limit": "AI limit reached ({n} per session, or the daily limit for the demo).",
         "download": "Download letter (.md)",
         "no_data": "Market data is unavailable right now, so only the allocation and rate shocks are shown.",
+        "src_live": "live (Yahoo Finance)", "src_snap": "saved snapshot through {date}", "src_none": "unavailable",
         "footer": "Educational project, not investment advice. Prices: {source}. Past results don't guarantee future returns; figures are before fees and taxes. [Source code]({url})",
     },
     "es": {
@@ -109,11 +111,14 @@ UI = {
         "ai_limit": "Se alcanzó el límite de IA ({n} por sesión, o el límite diario de la demostración).",
         "download": "Descargar carta (.md)",
         "no_data": "Los datos de mercado no están disponibles ahora; solo se muestran la distribución y los cambios de tasas.",
+        "src_live": "en vivo (Yahoo Finance)", "src_snap": "copia guardada hasta {date}", "src_none": "no disponibles",
         "footer": "Proyecto educativo, no es asesoría de inversión. Precios: {source}. Los resultados pasados no garantizan rendimientos futuros; las cifras son antes de comisiones e impuestos. [Código fuente]({url})",
     },
 }
 
 MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+MONTHS_ES_LONG = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+                  "septiembre", "octubre", "noviembre", "diciembre"]
 
 
 def month_year(ts, lang):
@@ -162,6 +167,43 @@ def api_key():
 
 def signed_usd(x):
     return "+" + usd(x) if round(x) > 0 else usd(x)
+
+
+CHART_CONFIG = {"displayModeBar": False}     # the hover toolbar overlaps titles on phones
+
+
+def day_month_year(ts, lang):
+    return f"{ts.day} de {MONTHS_ES_LONG[ts.month - 1]} de {ts.year}" if lang == "es" else f"{ts:%b} {ts.day}, {ts.year}"
+
+
+def two_lines(label):
+    """Break a chart label at the space nearest its middle, so it fits on a phone."""
+    if " " not in label:
+        return label
+    mid = len(label) / 2
+    cut = min((i for i, ch in enumerate(label) if ch == " "), key=lambda i: abs(i - mid))
+    return label[:cut] + "<br>" + label[cut + 1:]
+
+
+# Tabs keep their place when the language changes. Each language has its own
+# tab widget (labels differ); the open tab's position is stored separately and
+# the widget is driven only through its session-state key, like the radios.
+
+def _remember_tab(lang):
+    labels = UI[lang]["tabs"]
+    st.session_state.tab_index = labels.index(st.session_state[f"tabs_{lang}"])
+
+
+def language_tabs(lang):
+    labels = UI[lang]["tabs"]
+    if "key" not in inspect.signature(st.tabs).parameters:    # Streamlit < 1.52: no tab state
+        return st.tabs(labels)
+    other = "es" if lang == "en" else "en"
+    st.session_state.pop(f"tabs_{other}", None)
+    key = f"tabs_{lang}"
+    if key not in st.session_state:
+        st.session_state[key] = labels[st.session_state.get("tab_index", 0)]
+    return st.tabs(labels, key=key, on_change=_remember_tab, args=(lang,))
 
 
 def style(fig, height=360):
@@ -238,7 +280,7 @@ st.caption(t["subtitle"])
 if prices is None:
     st.warning(t["no_data"])
 
-tabs = st.tabs(t["tabs"])
+tabs = language_tabs(lang)
 
 # Overview -----------------------------------------------------------------
 with tabs[0]:
@@ -275,7 +317,7 @@ with tabs[0]:
         fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.1, x=0.5, xanchor="center"))
         fig = style(fig, 380)
         fig.update_layout(margin=dict(l=40, r=40, t=30, b=10))
-        st.plotly_chart(fig, width="stretch", theme="streamlit")
+        st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
 
 # Crisis stress tests ------------------------------------------------------
 with tabs[1]:
@@ -285,14 +327,16 @@ with tabs[1]:
         crises = review["crises"]
         names = [CRISIS_NAMES[lang][c["name"]] for c in crises]
         fig = go.Figure(go.Bar(
-            y=names, x=[c["dollar_change"] for c in crises], orientation="h",
+            y=[two_lines(n) for n in names], x=[c["dollar_change"] for c in crises], orientation="h",
             marker=dict(color=BLUE, cornerradius=4),
             text=[f"{usd(c['dollar_change'])} ({c['return']:.1%})" for c in crises],
             textposition="inside", insidetextanchor="start", textfont=dict(color="white"),
             hovertemplate="%{y}<br>%{text}<extra></extra>"))
         fig.update_xaxes(tickformat="$,.0f", zeroline=True)
         fig.update_yaxes(autorange="reversed")
-        st.plotly_chart(style(fig, 280), width="stretch", theme="streamlit")
+        fig = style(fig, 280)
+        fig.update_layout(margin=dict(l=10, r=30, t=10, b=10))      # keeps the "$0" tick on screen
+        st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
         st.dataframe(pd.DataFrame([{
             t["crisis"]: CRISIS_NAMES[lang][c["name"]],
             t["loss"]: f"{c['return']:.1%}", t["loss_usd"]: usd(c["dollar_change"]),
@@ -311,18 +355,24 @@ with tabs[2]:
         names = [CRISIS_NAMES[lang][c["name"]] for c in crises]
         st.markdown(f"#### {t['panic_title']}")
         st.caption(t["panic_sub"])
+        short = [two_lines(n) for n in names]
         fig = go.Figure([
-            go.Bar(name=t["stayed"], x=names, y=[c["stayed"] for c in crises],
+            go.Bar(name=t["stayed"], x=short, y=[c["stayed"] for c in crises],
                    marker=dict(color=BLUE, cornerradius=4),
                    text=[usd(c["stayed"]) for c in crises], textposition="outside"),
-            go.Bar(name=t["panicked"], x=names, y=[c["panicked"] for c in crises],
+            go.Bar(name=t["panicked"], x=short, y=[c["panicked"] for c in crises],
                    marker=dict(color=ORANGE, cornerradius=4),
                    text=[usd(c["panicked"]) for c in crises], textposition="outside"),
         ])
         fig.update_traces(cliponaxis=False, hovertemplate="%{x}<br>%{fullData.name}: %{text}<extra></extra>")
+        top = max(max(c["stayed"], c["panicked"]) for c in crises)
         fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.08)
-        fig.update_yaxes(tickformat="$,.0f")
-        st.plotly_chart(style(fig, 380), width="stretch", theme="streamlit")
+        fig.update_xaxes(tickangle=0)
+        fig.update_yaxes(tickformat="$,.0f", range=[0, top * 1.15])   # room for the value labels
+        fig = style(fig, 400)
+        fig.update_layout(legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0),
+                          margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
         st.dataframe(pd.DataFrame([{t["crisis"]: n, t["cost"]: usd(c["panic_cost"])}
                                    for n, c in zip(names, crises)]),
                      hide_index=True, width="stretch")
@@ -341,7 +391,7 @@ with tabs[2]:
         fig.update_layout(hovermode="x unified")
         fig.update_xaxes(title=t["years"], dtick=1)
         fig.update_yaxes(title=t["balance"], tickformat="$,.0f")
-        st.plotly_chart(style(fig, 380), width="stretch", theme="streamlit")
+        st.plotly_chart(style(fig, 380), width="stretch", theme="streamlit", config=CHART_CONFIG)
         st.markdown(escape_dollars(t["seq_result"].format(diff=usd(abs(seq["difference"])),
                                                           first=usd(seq["crash_first"]["ending"]),
                                                           last=usd(seq["crash_last"]["ending"]))))
@@ -361,7 +411,7 @@ with tabs[3]:
         cliponaxis=False, hovertemplate="%{x}: %{text}<extra></extra>"))
     fig.update_xaxes(title=t["rate_change"], type="category")
     fig.update_yaxes(title=t["value_change"], tickformat="$,.0f", zeroline=True)
-    st.plotly_chart(style(fig, 320), width="stretch", theme="streamlit")
+    st.plotly_chart(style(fig, 320), width="stretch", theme="streamlit", config=CHART_CONFIG)
 
 # Client letter ------------------------------------------------------------
 with tabs[4]:
@@ -401,4 +451,10 @@ with tabs[4]:
         st.markdown(shown)
 
 st.divider()
-st.caption(t["footer"].format(source=source, url=REPO_URL))
+if prices is None:
+    source_text = t["src_none"]
+elif source.startswith("live"):
+    source_text = t["src_live"]
+else:
+    source_text = t["src_snap"].format(date=day_month_year(prices.index[-1], lang))
+st.caption(t["footer"].format(source=source_text, url=REPO_URL))
