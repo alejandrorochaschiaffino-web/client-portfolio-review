@@ -173,13 +173,20 @@ def style(fig, height=360):
 # ------------------------------------------------------------------ sidebar
 
 # The answers live in st.session_state.answers, separate from the radio
-# buttons. Each language gets its own buttons (labels differ), created from
-# the stored answers, so switching language never loses a selection.
+# buttons. Each language gets its own buttons (labels differ). The buttons are
+# always driven through their session-state keys, never a default index:
+# deleting a key and passing a new index leaves the browser showing the OLD
+# selection (the bug where picking a sample client didn't move the buttons).
 
-def _clear_answer_widgets(lang=None):
-    for code in ([lang] if lang else ["en", "es"]):
+def _clear_answer_widgets(lang):
+    for q in QUESTIONS:
+        st.session_state.pop(f"q_{q['id']}_{lang}", None)
+
+
+def _set_answer_widgets(answers):
+    for code in ("en", "es"):
         for q in QUESTIONS:
-            st.session_state.pop(f"q_{q['id']}_{code}", None)
+            st.session_state[f"q_{q['id']}_{code}"] = answers[q["id"]]
 
 
 def apply_sample():
@@ -189,7 +196,7 @@ def apply_sample():
             st.session_state.name = c["name"]
             st.session_state.amount = float(c["amount"])
             st.session_state.answers = dict(c["answers"])
-            _clear_answer_widgets()
+            _set_answer_widgets(c["answers"])
 
 
 st.set_page_config(page_title="Client Portfolio Review", layout="wide", initial_sidebar_state="auto")
@@ -212,8 +219,10 @@ with st.sidebar:
     answers = st.session_state.answers
     for q in QUESTIONS:
         text, options = question_text(q, lang)
-        answers[q["id"]] = st.radio(text, [1, 2, 3, 4], index=answers[q["id"]] - 1,
-                                    key=f"q_{q['id']}_{lang}",
+        key = f"q_{q['id']}_{lang}"
+        if key not in st.session_state:                     # first run, or just switched language
+            st.session_state[key] = answers[q["id"]]
+        answers[q["id"]] = st.radio(text, [1, 2, 3, 4], key=key,
                                     format_func=lambda p, o=options: o[p - 1])
     answers = dict(answers)
 
