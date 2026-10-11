@@ -3,6 +3,8 @@
 A bilingual (English/Spanish) tool that profiles an investor, builds and
 stress-tests a portfolio, and writes the client review an advisor would send.
 
+**Live demo: [alex-portfolio-review.streamlit.app](https://alex-portfolio-review.streamlit.app)**
+
 > Educational project. Not investment advice.
 
 ## Status

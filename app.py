@@ -192,7 +192,7 @@ def apply_sample():
             _clear_answer_widgets()
 
 
-st.set_page_config(page_title="Client Portfolio Review", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Client Portfolio Review", layout="wide", initial_sidebar_state="auto")
 
 if "name" not in st.session_state:
     st.session_state.sample = SAMPLE_CLIENTS[2]["name"]
