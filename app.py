@@ -10,6 +10,7 @@ Optional:      set ANTHROPIC_API_KEY (env var or Streamlit secret) to enable
 import datetime as dt
 import inspect
 import os
+import re
 import threading
 
 import pandas as pd
@@ -20,6 +21,8 @@ from portfolio_tool import data
 from portfolio_tool.i18n import (ASSET_CLASSES, CRISIS_NAMES, CRISIS_NOTES,
                                  PROFILE_DESCRIPTIONS, PROFILE_NAMES, question_text)
 from portfolio_tool.profiles import QUESTIONS
+from portfolio_tool.projection import chart_floor
+from portfolio_tool.pdf_report import build_pdf
 from portfolio_tool.report import ai_report, escape_dollars, odds, template_report, usd
 from portfolio_tool.review import build_review
 from portfolio_tool.sample_clients import SAMPLE_CLIENTS
@@ -83,7 +86,7 @@ UI = {
         "ai_off": "Template letter. Add an Anthropic API key to enable the AI personal touch.",
         "ai_fallback": "The AI text didn't pass the safety checks (or the API was unavailable), so the letter was not changed.",
         "ai_limit": "AI limit reached ({n} per session, or the daily limit for the demo).",
-        "download": "Download letter (.md)",
+        "download": "Download letter (.md)", "pdf": "Download PDF report",
         "no_data": "Market data is unavailable right now, so only the allocation and rate shocks are shown.",
         "src_live": "live (Yahoo Finance)", "src_snap": "saved snapshot through {date}", "src_none": "unavailable",
         "footer": "Educational project, not investment advice. Prices: {source}. Past results don't guarantee future returns; figures are before fees and taxes. [Source code]({url})",
@@ -137,7 +140,7 @@ UI = {
         "ai_off": "Carta de plantilla. Agregue una clave de API de Anthropic para activar el toque personal con IA.",
         "ai_fallback": "El texto de la IA no pasó los controles de seguridad (o la API no estaba disponible), así que la carta no cambió.",
         "ai_limit": "Se alcanzó el límite de IA ({n} por sesión, o el límite diario de la demostración).",
-        "download": "Descargar carta (.md)",
+        "download": "Descargar carta (.md)", "pdf": "Descargar informe PDF",
         "no_data": "Los datos de mercado no están disponibles ahora; solo se muestran la distribución y los cambios de tasas.",
         "src_live": "en vivo (Yahoo Finance)", "src_snap": "copia guardada hasta {date}", "src_none": "no disponibles",
         "footer": "Proyecto educativo, no es asesoría de inversión. Precios: {source}. Los resultados pasados no garantizan rendimientos futuros; las cifras son antes de comisiones e impuestos. [Código fuente]({url})",
@@ -318,6 +321,47 @@ st.caption(t["subtitle"])
 if prices is None:
     st.warning(t["no_data"])
 
+# The letter for these exact inputs: an AI-assisted one if this visitor made
+# one, otherwise the template. Keyed on everything the letter's numbers use.
+letter_key = (name, amount, tuple(sorted(answers.items())), tuple(sorted(goal.items())), lang,
+              str(review.get("data_through")))
+letters = st.session_state.setdefault("letters", {})
+
+
+def current_letter():
+    return letters.get(letter_key, (template_report(review, lang), "template"))
+
+
+def _downloads_take_callables() -> bool:
+    """Newer Streamlit can build a download only when it's clicked."""
+    try:
+        from streamlit.elements.widgets.button import DownloadButtonDataType
+        return "Callable" in str(DownloadButtonDataType)
+    except Exception:                                    # internal name moved: play safe
+        return False
+
+
+CALLABLE_DOWNLOADS = _downloads_take_callables()
+
+
+@st.cache_data(max_entries=50, show_spinner=False)
+def cached_pdf(key, _review, letter_text, lang_):
+    return build_pdf(_review, letter_text, lang_)
+
+
+def pdf_button(key):
+    """PDF of the current review and letter, built only when someone clicks (if supported)."""
+    letter_text = current_letter()[0]
+    snapshot, lang_ = review, lang
+    if CALLABLE_DOWNLOADS:
+        data = lambda: build_pdf(snapshot, letter_text, lang_)   # noqa: E731
+    else:                                                        # older Streamlit: build now, cached
+        data = cached_pdf((letter_key, letter_text), snapshot, letter_text, lang_)
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "client"
+    st.download_button(t["pdf"], data, file_name=f"portfolio_review_{safe}_{lang}.pdf",
+                       mime="application/pdf", key=key, type="primary", icon=":material/picture_as_pdf:")
+
+
 tabs = language_tabs(lang)
 
 # Overview -----------------------------------------------------------------
@@ -337,6 +381,7 @@ with tabs[0]:
             c2.metric(t["vol"], f"{s['volatility']:.1%}", help=t["vol_help"])
             c3.metric(t["worst"], f"{s['max_drawdown']:.1%}", help=t["worst_help"])
             c4.metric(t["stocks"], f"{review['stock_share']:.0%}")
+        pdf_button("pdf_overview")
         st.markdown(f"##### {t['holdings']}")
         st.dataframe(pd.DataFrame([{
             t["fund"]: h["ticker"], t["class"]: ASSET_CLASSES[lang][h["asset_class"]],
@@ -396,7 +441,8 @@ with tabs[1]:
                       annotation_text=f"{t['goal_line_goal']}: {usd(g['goal'])}",
                       annotation_position="top left")
         fig.update_xaxes(title=t["goal_x"])
-        fig.update_yaxes(title=t["goal_y"], tickformat="$,.0f", rangemode="tozero")
+        top = max(max(b[90]), g["goal"]) * 1.05
+        fig.update_yaxes(title=t["goal_y"], tickformat="$,.0f", range=[chart_floor(g), top])
         fig = style(fig, 400)
         fig.update_layout(legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0),
                           margin=dict(l=10, r=10, t=40, b=10))
@@ -513,9 +559,7 @@ with tabs[4]:
 # Client letter ------------------------------------------------------------
 with tabs[5]:
     st.markdown(f"#### {t['letter_title']}")
-    letter_key = (name, amount, tuple(sorted(answers.items())), lang, str(review.get("data_through")))
-    letters = st.session_state.setdefault("letters", {})
-    letter, source_kind = letters.get(letter_key, (template_report(review, lang), "template"))
+    letter, source_kind = current_letter()
 
     key = api_key()
     if key:
@@ -538,6 +582,7 @@ with tabs[5]:
         elif used >= MAX_AI_LETTERS:
             st.caption(t["ai_limit"].format(n=MAX_AI_LETTERS))
     st.caption(t["ai_on"] if source_kind == "ai" else t["ai_ready"] if key else t["ai_off"])
+    pdf_button("pdf_letter")
     st.download_button(t["download"], letter, file_name=f"portfolio_review_{lang}.md",
                        mime="text/markdown")
     safe = escape_dollars(letter)              # on screen, "$" would otherwise start a LaTeX formula

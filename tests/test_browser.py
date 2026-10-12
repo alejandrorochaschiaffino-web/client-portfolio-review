@@ -156,3 +156,18 @@ def test_goal_inputs_follow_samples_edits_and_language(page):
     assert page.get_by_label("Goal ($)").input_value() == "1000000"
     page.get_by_role("tab", name="Overview").click()
     settle(page)
+
+
+def test_pdf_download_works_in_both_languages(page):
+    pick_sample(page, "Maria Gonzalez")
+    for lang_label, button in (("English", "Download PDF report"), ("Español", "Descargar informe PDF")):
+        sidebar(page).get_by_text(lang_label).click()
+        settle(page)
+        with page.expect_download(timeout=60000) as info:
+            page.get_by_role("button", name=button).first.click()
+        path = info.value.path()
+        data = open(path, "rb").read()
+        assert data.startswith(b"%PDF") and len(data) > 50_000
+        assert info.value.suggested_filename.startswith("portfolio_review_Maria_Gonzalez_")
+    sidebar(page).get_by_text("English").click()
+    settle(page)

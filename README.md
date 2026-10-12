@@ -12,7 +12,7 @@ stress-tests a portfolio, and writes the client review an advisor would send.
 - [x] **Phase 1 — Foundation:** risk questionnaire, suitability caps, model portfolios, allocation engine
 - [x] **Phase 2 — Risk engine:** real ETF data, crisis stress tests, duration rate shock
 - [x] **Phase 3 — Web app:** interactive charts, English/Spanish interface, bilingual client letter (template + optional AI)
-- [ ] Phase 4 — Monte Carlo goal projection, PDF export
+- [x] **Phase 4 — Goal projection and PDF:** Monte Carlo odds of reaching a goal, bilingual PDF client report
 - [ ] Phase 5 — Demo video and polish
 
 ## How it works (Phase 1)
@@ -124,6 +124,36 @@ each week.
    plain template is used instead. Capped at 5 uses per visitor and 100 per day, so the API
    cost stays at cents.
 
+## How it works (Phase 4)
+
+1. **Goal projection (Monte Carlo).** The client enters a goal ("$1,000,000 in 30 years,
+   adding $500 a month"). The tool builds 10,000 possible futures by stitching together random
+   12-month stretches of the portfolio's real monthly returns since 2007 (a *block bootstrap*:
+   keeping whole years together preserves how crashes cluster and recoveries follow), then
+   counts how often the goal is reached. Results: the odds, a fan chart of outcomes, and what
+   would raise the odds.
+2. **"What if I saved more?" is exact, not re-simulated.** In every simulated future the ending
+   balance is `amount × G + monthly savings × A`, where G is the growth of $1 invested at the
+   start and A is what $1 saved every month grows to. So the savings needed for an 80% chance
+   is simply the 80th percentile of `(goal − amount × G) / A` across the futures. The tests
+   check this against the compound-interest and annuity formulas, and against the full
+   month-by-month simulation.
+3. **Odds are rounded down** (79.6% shows as 79%) so the tool never says "80%" next to advice
+   on how to reach 80%.
+4. **PDF report.** One click builds a 4-page client report in English or Spanish: the
+   recommendation, key figures, allocation and goal projection on page 1, crisis results and
+   the two client questions on page 2, then the letter. Charts are drawn with matplotlib and
+   the layout with ReportLab, using the DejaVu fonts that ship with matplotlib so accents print
+   correctly. Tests read the text back out of the PDF to check the numbers and the language.
+
+| Sample client | Goal | Portfolio | Chance | Typical outcome |
+|---|---|---|---|---|
+| Jordan Lee | $1,000,000 in 30 years, +$500/month | Growth | 66% | $1.31M |
+| Carlos and Ana Rivera | $200,000 in 8 years, +$400/month | Moderate | 82% | $262K |
+| Maria Gonzalez | Keep $400,000 for 2 years | Conservative | 87% | $438K |
+
+*Simulated from history through Oct 2026; nominal dollars, before fees, taxes and inflation.*
+
 ## Run it
 
 ```bash
@@ -148,7 +178,9 @@ portfolio_tool/
   duration.py        bond duration and the rate-shock test
   client_scenarios.py  recovery time, panic-selling cost, retirement timing risk
   review.py          runs every analysis for one client
+  projection.py      Monte Carlo goal projection (block bootstrap)
   report.py          bilingual client letter (template + number-free AI passages)
+  pdf_report.py      bilingual PDF client report
   i18n.py            English/Spanish text
 scripts/fetch_data.py  downloads fresh prices
 data/prices.csv      saved price snapshot

@@ -113,3 +113,14 @@ def project(history: np.ndarray, amount: float, monthly: float, years: int,
             "plus_2_years": float(np.mean(amount * G2 + monthly * A2 >= goal)),
         },
     }
+
+
+def chart_floor(result: dict) -> float:
+    """
+    Bottom of the y-axis for the fan chart: $0 for long goals, but close to
+    the data for short ones, where starting at $0 would flatten everything.
+    """
+    low = min(min(result["bands"][10]), result["goal"])
+    top = max(max(result["bands"][90]), result["goal"])
+    floor = low * 0.9
+    return 0.0 if floor < 0.35 * top else floor
