@@ -1,9 +1,46 @@
-# Client Portfolio Review Tool
+# Client Portfolio Review
 
-A bilingual (English/Spanish) tool that profiles an investor, builds and
-stress-tests a portfolio, and writes the client review an advisor would send.
+**A bilingual (English/Spanish) tool that does a financial advisor's first meeting:** it profiles an
+investor, recommends a portfolio, stress-tests it against real crises, projects the odds of reaching
+their goal, and writes the client letter and PDF report an advisor would hand over.
 
-**Live demo: [alex-portfolio-review.streamlit.app](https://alex-portfolio-review.streamlit.app)**
+**▶ Live demo: [alex-portfolio-review.streamlit.app](https://alex-portfolio-review.streamlit.app)** — try a sample client or answer the seven questions yourself.
+
+**🎬 2-minute video walkthrough:** [docs/demo.mp4](https://github.com/alejandrorochaschiaffino-web/client-portfolio-review/raw/main/docs/demo.mp4)
+
+![Overview: recommended profile, key figures and allocation](docs/screenshots/overview.png)
+
+## What it does
+
+| | |
+|---|---|
+| **Suitability, not just a score** | Seven questions score risk tolerance, then caps apply when the money is needed soon, the goal is close, or the client says they'd sell everything in a downturn. The app says which cap applied and why. |
+| **Real crises, in the client's dollars** | Every portfolio is replayed through the 2008 crisis, the 2020 COVID crash and the 2022 rate shock using real ETF prices since 2007, with recovery times. |
+| **The questions clients actually ask** | "Should I sell and wait it out?" (the cost of panic-selling) and "Does it matter when a crash happens if I'm retired?" (sequence-of-returns risk). |
+| **Interest-rate risk** | Bond duration turns "rates up 1 point" into a dollar figure, using the method from my finance class. |
+| **Goal projection** | 10,000 Monte Carlo futures built from the portfolio's own history give the odds of reaching a goal, a fan of outcomes, and the exact savings needed for an 80% chance. |
+| **Client letter and PDF, in English or Spanish** | A template writes every number; optional AI (Claude) adds a personal opening but is never allowed to write a number. |
+
+| Goal projection | Crisis stress tests |
+|---|---|
+| ![Goal projection](docs/screenshots/goal_projection.png) | ![Crisis stress tests](docs/screenshots/crisis_stress_tests.png) |
+| **Client questions** | **Client letter (Spanish)** |
+| ![Client questions](docs/screenshots/client_questions.png) | ![Client letter in Spanish](docs/screenshots/client_letter_es.png) |
+
+<p align="center"><img src="docs/screenshots/pdf_report.png" alt="Page 1 of the PDF client report" width="480"></p>
+
+## How it's built and checked
+
+- **Python** (pandas, NumPy) for the analysis; **Streamlit** + **Plotly** for the web app;
+  **ReportLab** + **matplotlib** for the PDF; **Claude** (Anthropic API) for the optional AI passages.
+- **Data:** daily prices for VTI, VXUS, BND and SGOV (with index-fund stand-ins before they launched)
+  from Yahoo Finance, refreshed every Monday by a GitHub Action
+  that also runs the test suite before saving new data.
+- **Tests:** about 190 automated tests, covering the finance math against textbook formulas, the app
+  clicked through in a real browser, the PDF read back to check its numbers, and the Spanish version
+  checked for leftover English. They run on Python 3.9 through 3.13.
+- **Reviews:** every phase was checked by an independent reviewer looking for bugs; each finding was
+  fixed and turned into a test.
 
 > Educational project. Not investment advice.
 
@@ -13,7 +50,7 @@ stress-tests a portfolio, and writes the client review an advisor would send.
 - [x] **Phase 2 — Risk engine:** real ETF data, crisis stress tests, duration rate shock
 - [x] **Phase 3 — Web app:** interactive charts, English/Spanish interface, bilingual client letter (template + optional AI)
 - [x] **Phase 4 — Goal projection and PDF:** Monte Carlo odds of reaching a goal, bilingual PDF client report
-- [ ] Phase 5 — Demo video and polish
+- [x] **Phase 5 — Launch:** screenshots, demo video, polish
 
 ## How it works (Phase 1)
 
