@@ -169,7 +169,7 @@ python3 main.py               # review the three sample clients in the terminal
 python3 main.py --interview   # take the questionnaire yourself
 python3 main.py --offline     # use saved prices, no download
 python3 scripts/fetch_data.py # refresh the price snapshot
-python3 -m pip install -r requirements.txt && python3 -m pytest   # run the tests
+python3 -m pip install -r requirements-dev.txt && python3 -m pytest   # run the tests
 ```
 
 ## Project layout

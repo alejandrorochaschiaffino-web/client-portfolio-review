@@ -8,6 +8,7 @@ Optional:      set ANTHROPIC_API_KEY (env var or Streamlit secret) to enable
 """
 
 import datetime as dt
+import importlib
 import inspect
 import os
 import re
@@ -18,7 +19,21 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_tool import data
+from portfolio_tool import data, hot_reload
+
+
+@st.cache_resource
+def _module_stamps():
+    return {}
+
+
+# After a deploy, make sure the library code matches the new page code, and
+# forget results that the old code computed.
+for _name in ("review", "pdf_report"):                    # load the whole library first
+    importlib.import_module(f"portfolio_tool.{_name}")
+if hot_reload.reload_changed(_module_stamps()):
+    st.cache_data.clear()
+
 from portfolio_tool.i18n import (ASSET_CLASSES, CRISIS_NAMES, CRISIS_NOTES,
                                  PROFILE_DESCRIPTIONS, PROFILE_NAMES, question_text)
 from portfolio_tool.profiles import QUESTIONS
@@ -29,7 +44,7 @@ from portfolio_tool.review import build_review
 from portfolio_tool.sample_clients import SAMPLE_CLIENTS
 
 REPO_URL = "https://github.com/alejandrorochaschiaffino-web/client-portfolio-review"
-MAX_AI_LETTERS = 5          # per visitor session
+MAX_AI_LETTERS = 5          # per browser session
 MAX_AI_PER_DAY = 100        # across all visitors; together these cap API cost at cents a day
 
 # Validated categorical palette, fixed order (blue, orange, aqua, yellow).
