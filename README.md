@@ -29,9 +29,13 @@ stress-tests a portfolio, and writes the client review an advisor would send.
    | 18–22 | Moderate |
    | 23–28 | Growth |
 
-3. **Suitability cap.** A client who needs the money within 3 years is capped at
-   Conservative; within 3–5 years, at Moderately Conservative. Their *willingness*
-   to take risk can't override their *ability* to take it.
+3. **Suitability caps.** A client who needs the money within 3 years is capped at
+   Conservative; within 3–5 years, at Moderately Conservative. The same applies when the
+   client's savings goal is that close. A client who says they would sell everything after
+   a 20% drop is capped at Moderately Conservative, since a riskier mix would likely be sold
+   at the bottom. The strictest cap wins, and the app and letter say which one applied.
+   Answers that sound brave can't override the client's *ability* to take risk or how
+   they say they'd actually behave.
 4. **Allocation.** Each profile maps to a model portfolio of four index ETFs
    (VTI, VXUS, BND, SGOV), split into dollars for the client's amount.
 
@@ -109,20 +113,23 @@ each week.
 ## How it works (Phase 3)
 
 1. **Web app** (`app.py`, Streamlit). Fill in the questionnaire in the sidebar, or start from a
-   sample client, and switch the whole interface between English and Spanish. Five tabs:
-   overview and allocation, crisis stress tests, client questions (panic-selling and
-   retirement timing), interest-rate shocks, and the client letter.
+   sample client, and switch the whole interface between English and Spanish. Six tabs:
+   overview and allocation, goal projection, crisis stress tests, client questions
+   (panic-selling and retirement timing), interest-rate shocks, and the client letter.
 2. **One source of truth.** `review.build_review()` runs every analysis once; the app, the
-   terminal demo and the letter all read from it, so they can't disagree.
+   client letter and the PDF report all read from it, so they can't disagree. (`main.py` is a
+   simpler terminal demo that calls the same analysis functions directly.)
 3. **Bilingual client letter.** A built-in template writes the review in English or Spanish
    from the analysis, for free, every time.
 4. **Optional AI personal touch, never touching a number.** With an `ANTHROPIC_API_KEY`,
    Claude (Haiku) writes only two number-free passages: a personal opening and an
    "In plain terms" summary. Every sentence with a figure stays exactly as the analysis wrote
-   it. Each AI passage is rejected if it contains a digit, a number word (English or Spanish),
-   a currency or percent sign, or a promise about returns ("guarantee", "will grow"), and the
-   plain template is used instead. Capped at 5 uses per visitor and 100 per day, so the API
-   cost stays at cents.
+   it. Each AI passage is rejected if it contains a digit, a number, fraction or ordinal word
+   in English or Spanish ("twenty", "a third", "decade"; "one" is allowed as a pronoun), a
+   currency or percent sign, a link, or a promise about returns or safety ("guarantee",
+   "will grow", "likely to grow", "will keep your money safe"), and the plain template is used
+   instead. Capped at 5 uses per browser session and 100 per day per server, so the API cost
+   stays at cents.
 
 ## How it works (Phase 4)
 

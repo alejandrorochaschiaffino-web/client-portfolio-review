@@ -88,14 +88,15 @@ def test_picking_a_sample_moves_the_buttons(page):
 
 
 def test_clicking_an_answer_changes_the_result(page):
-    pick_sample(page, "Maria Gonzalez")
-    sidebar(page).get_by_text("More than 10 years from now").click()
+    pick_sample(page, "Jordan Lee")
+    assert profile(page).endswith("Growth")
+    sidebar(page).get_by_text("In less than 3 years").click()
     settle(page)
-    assert profile(page).endswith("Growth")             # score 22 -> 25, no horizon cap
+    assert profile(page).endswith("Conservative")       # short horizon caps the profile
     sidebar(page).get_by_text("Reload sample answers").click()
     settle(page)
-    assert checked_answers(page)[0] == "In less than 3 years"
-    assert profile(page).endswith("Conservative")
+    assert checked_answers(page)[0] == "More than 10 years from now"
+    assert profile(page).endswith("Growth")
 
 
 def test_language_switch_keeps_answers_and_open_tab(page):
@@ -131,6 +132,16 @@ def test_odd_client_names_render_safely(page):
     settle(page)
 
 
+def expected_odds(client_name):
+    from portfolio_tool.data import load_snapshot
+    from portfolio_tool.report import odds
+    from portfolio_tool.review import build_review
+    from portfolio_tool.sample_clients import SAMPLE_CLIENTS
+    c = next(c for c in SAMPLE_CLIENTS if c["name"] == client_name)
+    r = build_review(c["name"], c["answers"], c["amount"], load_snapshot(), c["goal"])
+    return odds(r["goal"]["probability"])
+
+
 def goal_odds(pg):
     return pg.locator('[data-testid="stMarkdownContainer"] h2').filter(has_text="%").first.inner_text()
 
@@ -141,7 +152,7 @@ def test_goal_inputs_follow_samples_edits_and_language(page):
     settle(page)
     target = page.get_by_label("Goal ($)")
     assert target.input_value() == "1000000"
-    assert goal_odds(page) == "66%"
+    assert goal_odds(page) == expected_odds("Jordan Lee")    # same as the analysis
     target.fill("20000000")
     target.press("Enter")
     settle(page)

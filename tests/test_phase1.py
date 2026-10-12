@@ -1,4 +1,6 @@
 import pytest
+
+from portfolio_tool.sample_clients import SAMPLE_CLIENTS
 from portfolio_tool.profiles import assess, profile_for_score, score_answers
 from portfolio_tool.allocation import allocate, stock_share
 from portfolio_tool.portfolios import MODEL_PORTFOLIOS
@@ -63,3 +65,31 @@ def test_riskier_profiles_hold_more_stock():
     shares = [stock_share(allocate(p, 1000)) for p in
               ["Conservative", "Moderately Conservative", "Moderate", "Growth"]]
     assert shares == sorted(shares)
+
+
+def test_selling_everything_after_a_drop_caps_risk():
+    from portfolio_tool.profiles import assess
+    brave_but_sells = dict(horizon=4, goal=4, drop_reaction=1, experience=4, income=4,
+                           emergency_fund=4, tradeoff=4)
+    r = assess(brave_but_sells)
+    assert r.score_profile == "Growth" and r.profile == "Moderately Conservative"
+    assert r.capped and r.cap_reason == "losses"
+
+
+def test_goal_years_cap_like_the_horizon_question():
+    from portfolio_tool.profiles import assess, horizon_bucket
+    assert [horizon_bucket(y) for y in (1, 2, 3, 5, 6, 10, 11, 30)] == [1, 1, 2, 2, 3, 3, 4, 4]
+    growth = dict(horizon=4, goal=4, drop_reaction=4, experience=4, income=4, emergency_fund=4, tradeoff=4)
+    assert assess(growth).profile == "Growth"
+    assert assess(growth, goal_years=2).profile == "Conservative"
+    assert assess(growth, goal_years=4).profile == "Moderately Conservative"
+    assert assess(growth, goal_years=20).profile == "Growth"
+
+
+def test_strictest_cap_wins_and_samples_are_unchanged():
+    from portfolio_tool.profiles import assess
+    both = dict(horizon=1, goal=4, drop_reaction=1, experience=4, income=4, emergency_fund=4, tradeoff=4)
+    assert assess(both).profile == "Conservative"          # horizon cap is stricter than the loss cap
+    expected = {"Jordan Lee": "Growth", "Carlos and Ana Rivera": "Moderate", "Maria Gonzalez": "Conservative"}
+    for c in SAMPLE_CLIENTS:
+        assert assess(c["answers"], goal_years=c["goal"]["years"]).profile == expected[c["name"]]

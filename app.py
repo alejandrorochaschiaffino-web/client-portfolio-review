@@ -24,7 +24,7 @@ from portfolio_tool.i18n import (ASSET_CLASSES, CRISIS_NAMES, CRISIS_NOTES,
 from portfolio_tool.profiles import QUESTIONS
 from portfolio_tool.projection import chart_floor
 from portfolio_tool.pdf_report import build_pdf
-from portfolio_tool.report import ai_report, escape_dollars, odds, template_report, usd
+from portfolio_tool.report import ai_report, escape_dollars, md_escape, odds, template_report, usd
 from portfolio_tool.review import build_review
 from portfolio_tool.sample_clients import SAMPLE_CLIENTS
 
@@ -58,8 +58,12 @@ UI = {
         "goal_need": "To reach an 80% chance, save about **{required}** a month in total.",
         "goal_method": "{n} simulated futures, each stitched together from real 12-month stretches of this portfolio's history since {start}. A simulation, not a prediction; before fees, taxes and inflation.",
         "goal_error": "Enter a goal, a number of years (1 to 50) and monthly savings to see the projection.",
+        "goal_unset": "No goal set for {name} yet. Change the numbers above, or use them as they are.",
+        "goal_use": "Use this goal", "this_client": "this client",
         "profile": "Recommended profile", "score": "Risk score: {score} / 28",
-        "capped": "The answers alone point to **{score_profile}**, but the money is needed soon, so the profile is capped at **{profile}** (suitability: little time to recover from a loss).",
+        "capped_horizon": "The answers alone point to **{score_profile}**, but the money is needed soon, so the profile is capped at **{profile}** (suitability: little time to recover from a loss).",
+        "capped_goal": "The answers alone point to **{score_profile}**, but the goal is only {years} away, so the profile is capped at **{profile}** (suitability: little time to recover from a loss).",
+        "capped_losses": "The answers alone point to **{score_profile}**, but the client would sell everything after a 20% drop, so the profile is capped at **{profile}** (suitability: a riskier mix would likely be sold at the bottom).",
         "ann": "Annualized return", "vol": "Volatility", "worst": "Worst fall", "stocks": "In stocks",
         "ann_help": "Compound growth rate per year, Jun 2007 to today, rebalanced monthly.",
         "vol_help": "Typical yearly swing: volatility of monthly returns, annualized.",
@@ -68,7 +72,7 @@ UI = {
         "fund": "Fund", "class": "Asset class", "weight": "Weight", "dollars": "Amount",
         "crisis_title": "What this portfolio did in three real crises",
         "crisis_sub": "Invested at the market peak, measured at the market bottom. Dollar figures use this client's amount.",
-        "crisis": "Crisis", "loss": "Loss", "loss_usd": "Loss ($)", "back": "Back to even", "note": "What happened",
+        "crisis": "Crisis", "loss": "Change", "loss_usd": "Change ($)", "back": "Back to even", "note": "What happened",
         "back_fmt": "{date} ({m} months)", "not_yet": "Not yet",
         "panic_title": "\"Should I sell and wait it out?\"",
         "panic_sub": "Selling at the bottom and buying back a year later, vs. staying invested. Values today.",
@@ -112,8 +116,12 @@ UI = {
         "goal_need": "Para llegar a 80% de probabilidad, ahorre alrededor de **{required}** al mes en total.",
         "goal_method": "{n} futuros simulados, cada uno armado con tramos reales de 12 meses de la historia de este portafolio desde {start}. Una simulación, no una predicción; antes de comisiones, impuestos e inflación.",
         "goal_error": "Ingrese una meta, un número de años (de 1 a 50) y el ahorro mensual para ver la proyección.",
+        "goal_unset": "Todavía no hay una meta para {name}. Cambie las cifras de arriba o úselas tal como están.",
+        "goal_use": "Usar esta meta", "this_client": "este cliente",
         "profile": "Perfil recomendado", "score": "Puntaje de riesgo: {score} / 28",
-        "capped": "Las respuestas por sí solas indican **{score_profile}**, pero el dinero se necesitará pronto, así que el perfil se limita a **{profile}** (idoneidad: poco tiempo para recuperarse de una pérdida).",
+        "capped_horizon": "Las respuestas por sí solas indican **{score_profile}**, pero el dinero se necesitará pronto, así que el perfil se limita a **{profile}** (idoneidad: poco tiempo para recuperarse de una pérdida).",
+        "capped_goal": "Las respuestas por sí solas indican **{score_profile}**, pero la meta está a solo {years}, así que el perfil se limita a **{profile}** (idoneidad: poco tiempo para recuperarse de una pérdida).",
+        "capped_losses": "Las respuestas por sí solas indican **{score_profile}**, pero el cliente vendería todo tras una caída del 20%, así que el perfil se limita a **{profile}** (idoneidad: una combinación más arriesgada probablemente se vendería en el peor momento).",
         "ann": "Rendimiento anualizado", "vol": "Volatilidad", "worst": "Peor caída", "stocks": "En acciones",
         "ann_help": "Tasa de crecimiento compuesta por año, de junio de 2007 a hoy, con rebalanceo mensual.",
         "vol_help": "Altibajo anual típico: volatilidad de los rendimientos mensuales, anualizada.",
@@ -122,7 +130,7 @@ UI = {
         "fund": "Fondo", "class": "Clase de activo", "weight": "Porcentaje", "dollars": "Monto",
         "crisis_title": "Qué hizo este portafolio en tres crisis reales",
         "crisis_sub": "Invertido en el punto máximo del mercado, medido en el punto más bajo. Las cifras en dólares usan el monto de este cliente.",
-        "crisis": "Crisis", "loss": "Pérdida", "loss_usd": "Pérdida ($)", "back": "Recuperación", "note": "Qué pasó",
+        "crisis": "Crisis", "loss": "Cambio", "loss_usd": "Cambio ($)", "back": "Recuperación", "note": "Qué pasó",
         "back_fmt": "{date} ({m} meses)", "not_yet": "Todavía no",
         "panic_title": "\"¿Debería vender y esperar?\"",
         "panic_sub": "Vender en el punto más bajo y volver a invertir un año después, frente a mantenerse invertido. Valores de hoy.",
@@ -239,6 +247,18 @@ def language_tabs(lang):
     return st.tabs(labels, key=key, on_change=_remember_tab, args=(lang,))
 
 
+_TABLE_HIDES_INDEX = "hide_index" in inspect.signature(st.table).parameters
+
+
+def show_table(rows):
+    """A static table that wraps text to fit the screen (st.dataframe cuts columns off on phones)."""
+    df = pd.DataFrame(rows)
+    if _TABLE_HIDES_INDEX:
+        st.table(df, hide_index=True, border="horizontal")
+    else:                                               # older Streamlit
+        st.dataframe(df, hide_index=True, width="stretch")
+
+
 def style(fig, height=360):
     fig.update_layout(height=height, margin=dict(l=10, r=10, t=10, b=10),
                       legend=dict(orientation="h", y=-0.15), hoverlabel=dict(namelength=-1))
@@ -264,6 +284,11 @@ def _set_answer_widgets(answers):
             st.session_state[f"q_{q['id']}_{code}"] = answers[q["id"]]
 
 
+def claim_goal():
+    """The goal inputs now describe the client currently named in the sidebar."""
+    st.session_state.goal_owner = st.session_state.get("name", "")
+
+
 def apply_sample():
     choice = st.session_state.sample
     for c in SAMPLE_CLIENTS:
@@ -274,6 +299,7 @@ def apply_sample():
             st.session_state.goal_target = float(c["goal"]["target"])
             st.session_state.goal_years = int(c["goal"]["years"])
             st.session_state.goal_monthly = float(c["goal"]["monthly"])
+            st.session_state.goal_owner = c["name"]
             _set_answer_widgets(c["answers"])
 
 
@@ -313,8 +339,16 @@ goal = {"target": float(st.session_state.get("goal_target", DEFAULT_GOAL["target
         "years": int(st.session_state.get("goal_years", DEFAULT_GOAL["years"])),
         "monthly": float(st.session_state.get("goal_monthly", DEFAULT_GOAL["monthly"]))}
 goal_ok = goal["target"] > 0 and 1 <= goal["years"] <= 50 and goal["monthly"] >= 0
-review = cached_review(name, tuple(sorted(answers.items())), amount,
-                       tuple(sorted(goal.items())) if goal_ok else None, data_version, prices)
+# A goal belongs to the client it was set for: type a new client's name and the
+# previous client's goal stops applying (to the letter, PDF and suitability)
+# until a goal is entered or confirmed for the new client.
+goal_active = goal_ok and st.session_state.get("goal_owner") == name
+try:
+    review = cached_review(name, tuple(sorted(answers.items())), amount,
+                           tuple(sorted(goal.items())) if goal_active else None, data_version, prices)
+except Exception:                                   # bad or too-short data: show what we can
+    prices, source = None, "unavailable"
+    review = cached_review(name, tuple(sorted(answers.items())), amount, None, None, None)
 profile = PROFILE_NAMES[lang][review["profile"]]
 
 st.title(t["title"])
@@ -324,7 +358,8 @@ if prices is None:
 
 # The letter for these exact inputs: an AI-assisted one if this visitor made
 # one, otherwise the template. Keyed on everything the letter's numbers use.
-letter_key = (name, amount, tuple(sorted(answers.items())), tuple(sorted(goal.items())), lang,
+letter_key = (name, amount, tuple(sorted(answers.items())),
+              tuple(sorted(goal.items())) if goal_active else None, lang,
               str(review.get("data_through")))
 letters = st.session_state.setdefault("letters", {})
 
@@ -374,8 +409,11 @@ with tabs[0]:
         st.caption(t["score"].format(score=review["score"]))
         st.write(PROFILE_DESCRIPTIONS[lang][review["profile"]])
         if review["capped"]:
-            st.info(t["capped"].format(score_profile=PROFILE_NAMES[lang][review["score_profile"]],
-                                       profile=profile))
+            gy = review.get("goal_years") or 0
+            st.info(t["capped_" + (review.get("cap_reason") or "horizon")].format(
+                score_profile=PROFILE_NAMES[lang][review["score_profile"]], profile=profile,
+                years=f"{gy} " + (("year" if gy == 1 else "years") if lang == "en"
+                                  else ("año" if gy == 1 else "años"))))
         if review["has_history"]:
             s = review["stats"]
             c1, c2, c3, c4 = st.columns(4)
@@ -385,10 +423,10 @@ with tabs[0]:
             c4.metric(t["stocks"], f"{review['stock_share']:.0%}")
         pdf_button("pdf_overview")
         st.markdown(f"##### {t['holdings']}")
-        st.dataframe(pd.DataFrame([{
+        show_table([{
             t["fund"]: h["ticker"], t["class"]: ASSET_CLASSES[lang][h["asset_class"]],
             t["weight"]: f"{h['weight']:.0%}", t["dollars"]: usd(h["dollars"])}
-            for h in review["holdings"]]), hide_index=True, width="stretch")
+            for h in review["holdings"]])
     with right:
         st.markdown(f"##### {t['alloc']}")
         classes = {}
@@ -409,13 +447,17 @@ with tabs[1]:
     st.markdown(f"#### {t['goal_title']}")
     g1, g2, g3 = st.columns(3)
     g1.number_input(t["goal_target"], min_value=1000.0, max_value=1_000_000_000.0, step=10_000.0,
-                    format="%.0f", key="goal_target")
-    g2.number_input(t["goal_years"], min_value=1, max_value=50, step=1, key="goal_years")
+                    format="%.0f", key="goal_target", on_change=claim_goal)
+    g2.number_input(t["goal_years"], min_value=1, max_value=50, step=1, key="goal_years",
+                    on_change=claim_goal)
     g3.number_input(t["goal_monthly"], min_value=0.0, max_value=1_000_000.0, step=50.0,
-                    format="%.0f", key="goal_monthly")
+                    format="%.0f", key="goal_monthly", on_change=claim_goal)
     g = review.get("goal")
     if not review["has_history"]:
         st.info(t["no_data"])
+    elif goal_ok and not goal_active:
+        st.info(escape_dollars(t["goal_unset"].format(name=md_escape(name) or t["this_client"])))
+        st.button(t["goal_use"], on_click=claim_goal, key="goal_use")
     elif not g:
         st.info(t["goal_error"])
     else:
@@ -455,8 +497,7 @@ with tabs[1]:
         rows = [(t["goal_now"], g["probability"])]
         rows += [(t["goal_plus"].format(extra=usd(e)), lev[f"plus_{e}"]) for e in (100, 250, 500)]
         rows.append((t["goal_wait"], lev["plus_2_years"]))
-        st.dataframe(pd.DataFrame([{t["goal_change"]: r, t["goal_chance"]: odds(p)} for r, p in rows]),
-                     hide_index=True, width="stretch")
+        show_table([{t["goal_change"]: r, t["goal_chance"]: odds(p)} for r, p in rows])
         if g["probability"] >= 0.80:
             st.success(t["goal_on_track"])
         else:
@@ -482,14 +523,14 @@ with tabs[2]:
         fig = style(fig, 280)
         fig.update_layout(margin=dict(l=10, r=30, t=10, b=10))      # keeps the "$0" tick on screen
         st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
-        st.dataframe(pd.DataFrame([{
+        show_table([{
             t["crisis"]: CRISIS_NAMES[lang][c["name"]],
             t["loss"]: f"{c['return']:.1%}", t["loss_usd"]: usd(c["dollar_change"]),
             t["back"]: (t["back_fmt"].format(date=month_year(c["recovery_date"], lang),
                                              m=round(c["months_total"]))
-                        if c["recovered"] else t["not_yet"]),
-            t["note"]: CRISIS_NOTES[lang][c["name"]]} for c in crises]),
-            hide_index=True, width="stretch")
+                        if c["recovered"] else t["not_yet"])} for c in crises])
+        st.markdown("\n".join(f"- **{CRISIS_NAMES[lang][c['name']]}:** {CRISIS_NOTES[lang][c['name']]}"
+                               for c in crises))       # below the table, so it fits on a phone
     else:
         st.info(t["no_data"])
 
@@ -518,9 +559,8 @@ with tabs[3]:
         fig.update_layout(legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0),
                           margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
-        st.dataframe(pd.DataFrame([{t["crisis"]: n, t["cost"]: usd(c["panic_cost"])}
-                                   for n, c in zip(names, crises)]),
-                     hide_index=True, width="stretch")
+        show_table([{t["crisis"]: n, t["cost"]: usd(c["panic_cost"])}
+                                   for n, c in zip(names, crises)])
 
         seq = review["sequence"]
         st.markdown(f"#### {t['seq_title']}")

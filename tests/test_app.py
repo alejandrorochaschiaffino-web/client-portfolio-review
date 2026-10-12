@@ -35,8 +35,11 @@ def test_app_loads_with_default_client():
 
 def test_answers_survive_a_language_switch():
     at = start()
-    at.radio(key="q_horizon_en").set_value(4).run()    # Maria now has 10+ years
-    assert metric(at, "In stocks") == "85%"            # score 22 -> 25: Growth, no cap
+    at.radio(key="q_horizon_en").set_value(4).run()    # Maria now says 10+ years...
+    assert metric(at, "In stocks") == "20%"            # ...but her goal is 2 years away: still capped
+    assert any("goal is only 2 years away" in i.value for i in at.info)
+    at.number_input(key="goal_years").set_value(20).run()
+    assert metric(at, "In stocks") == "85%"            # score 25, no cap left: Growth
     at.sidebar.radio[0].set_value("Español").run()
     assert not at.exception
     assert at.radio(key="q_horizon_es").value == 4     # still selected in Spanish
@@ -151,3 +154,21 @@ def test_sample_switch_sets_the_goal_and_letter_mentions_it():
     assert at.number_input(key="goal_years").value == 30
     text = " ".join(m.value for m in at.markdown)
     assert "Reaching your goal" in text and "10,000 possible futures" in text
+
+
+def test_a_new_client_does_not_inherit_the_sample_goal():
+    at = start()
+    at.sidebar.text_input[0].set_value("John Smith").run()
+    text = " ".join(m.value for m in at.markdown)
+    assert "Reaching your goal" not in text                     # Maria's goal no longer applies
+    assert any("No goal set for John Smith" in i.value for i in at.info)
+    at.button(key="goal_use").click().run()
+    assert "Reaching your goal" in " ".join(m.value for m in at.markdown)
+
+
+def test_selling_everything_caps_and_explains():
+    at = start()
+    at.sidebar.selectbox[0].set_value("Jordan Lee").run()
+    at.radio(key="q_drop_reaction_en").set_value(1).run()
+    assert metric(at, "In stocks") == "40%"                     # Moderately Conservative
+    assert any("sell everything after a 20% drop" in i.value for i in at.info)

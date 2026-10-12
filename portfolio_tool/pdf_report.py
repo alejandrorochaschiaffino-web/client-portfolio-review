@@ -48,7 +48,9 @@ LABELS = {
     "en": {
         "doc_title": "Portfolio Review", "prepared": "Prepared {today} · Market data through {through}",
         "for": "For", "profile": "Recommended profile", "score": "Risk score {score} of 28",
-        "capped": "The answers alone point to {score_profile}, but the money is needed soon, so the profile is capped at {profile}.",
+        "capped_horizon": "The answers alone point to {score_profile}, but the money is needed soon, so the profile is capped at {profile}.",
+        "capped_goal": "The answers alone point to {score_profile}, but the goal is only {years} away, so the profile is capped at {profile}.",
+        "capped_losses": "The answers alone point to {score_profile}, but the client would sell everything after a 20% drop, so the profile is capped at {profile}.",
         "ann": "Annualized return", "vol": "Volatility", "worst": "Worst fall", "stocks": "In stocks",
         "allocation": "Recommended allocation", "fund": "Fund", "class": "Asset class",
         "weight": "Weight", "amount": "Amount", "total": "Total",
@@ -57,7 +59,7 @@ LABELS = {
         "x_years": "Years from today", "typical": "Typical", "mid": "Middle half", "wide": "8 in 10 futures",
         "goal_line": "Goal",
         "history": "How it held up", "crises": "Three real crises (peak to bottom)",
-        "crisis": "Crisis", "loss": "Loss", "loss_usd": "Loss ($)", "back": "Back to even",
+        "crisis": "Crisis", "loss": "Change", "loss_usd": "Change ($)", "back": "Back to even",
         "months": "{m} months", "not_yet": "Not yet",
         "panic": "“Should I sell and wait it out?”", "stayed": "Stayed invested",
         "panicked": "Sold at bottom, back 1 year later",
@@ -72,7 +74,9 @@ LABELS = {
     "es": {
         "doc_title": "Revisión de portafolio", "prepared": "Preparado el {today} · Datos de mercado hasta el {through}",
         "for": "Para", "profile": "Perfil recomendado", "score": "Puntaje de riesgo {score} de 28",
-        "capped": "Las respuestas por sí solas indican {score_profile}, pero el dinero se necesitará pronto, así que el perfil se limita a {profile}.",
+        "capped_horizon": "Las respuestas por sí solas indican {score_profile}, pero el dinero se necesitará pronto, así que el perfil se limita a {profile}.",
+        "capped_goal": "Las respuestas por sí solas indican {score_profile}, pero la meta está a solo {years}, así que el perfil se limita a {profile}.",
+        "capped_losses": "Las respuestas por sí solas indican {score_profile}, pero el cliente vendería todo tras una caída del 20%, así que el perfil se limita a {profile}.",
         "ann": "Rendimiento anualizado", "vol": "Volatilidad", "worst": "Peor caída", "stocks": "En acciones",
         "allocation": "Asignación recomendada", "fund": "Fondo", "class": "Clase de activo",
         "weight": "Porcentaje", "amount": "Monto", "total": "Total",
@@ -81,7 +85,7 @@ LABELS = {
         "x_years": "Años a partir de hoy", "typical": "Típico", "mid": "Mitad central", "wide": "8 de cada 10 futuros",
         "goal_line": "Meta",
         "history": "Cómo resistió", "crises": "Tres crisis reales (del máximo al mínimo)",
-        "crisis": "Crisis", "loss": "Pérdida", "loss_usd": "Pérdida ($)", "back": "Recuperación",
+        "crisis": "Crisis", "loss": "Cambio", "loss_usd": "Cambio ($)", "back": "Recuperación",
         "months": "{m} meses", "not_yet": "Todavía no",
         "panic": "“¿Debería vender y esperar?”", "stayed": "Se mantuvo invertido",
         "panicked": "Vendió en el mínimo, volvió 1 año después",
@@ -383,8 +387,9 @@ def build_pdf(review: dict, letter_md: str, lang: str = "en", today: date | None
               Paragraph(_x(L["score"].format(score=review["score"])) + " · " +
                         _x(PROFILE_DESCRIPTIONS[lang][review["profile"]]), st["body"])]
     if review["capped"]:
-        story.append(Paragraph(_x(L["capped"].format(
-            score_profile=PROFILE_NAMES[lang][review["score_profile"]], profile=profile)), st["small"]))
+        story.append(Paragraph(_x(L["capped_" + (review.get("cap_reason") or "horizon")].format(
+            score_profile=PROFILE_NAMES[lang][review["score_profile"]], profile=profile,
+            years=_years(review.get("goal_years") or 0, lang))), st["small"]))
 
     if review["has_history"]:
         s = review["stats"]

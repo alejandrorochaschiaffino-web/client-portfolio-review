@@ -25,6 +25,9 @@ SNAPSHOT = Path(__file__).resolve().parent.parent / "data" / "prices.csv"
 
 # The data must reach back before the first stress test (Oct 9, 2007).
 MUST_START_BY = pd.Timestamp("2007-10-09")
+# The newest test needs a year after the 2022 bottom (Oct 12, 2022) for the
+# panic-selling comparison, so older data can't run every analysis.
+MUST_END_AFTER = pd.Timestamp("2023-10-12")
 
 
 def _end_date() -> str:
@@ -101,6 +104,8 @@ def check_prices(prices: pd.DataFrame, must_be_recent: bool = True) -> None:
         raise RuntimeError("Dates are out of order or repeated")
     if prices.index[0] > MUST_START_BY:
         raise RuntimeError(f"History starts {prices.index[0]:%Y-%m-%d}, too late for the 2008 test")
+    if prices.index[-1] < MUST_END_AFTER:
+        raise RuntimeError(f"History ends {prices.index[-1]:%Y-%m-%d}, too early for the 2022 tests")
     if must_be_recent and (pd.Timestamp.today() - prices.index[-1]).days > 10:
         raise RuntimeError(f"Latest price is {prices.index[-1]:%Y-%m-%d}, more than 10 days old")
 

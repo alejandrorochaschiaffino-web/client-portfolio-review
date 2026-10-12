@@ -1,7 +1,7 @@
 """
 One function that runs every analysis for a client and returns the results
-as plain data. The terminal demo, the web app and the client report all
-read from this, so they can never disagree with each other.
+as plain data. The web app, the client letter and the PDF report all read
+from this, so they can never disagree with each other.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def build_review(name: str, answers: dict, amount: float, prices=None, goal: dic
     goal (optional): {"target": dollars, "years": n, "monthly": savings per month}
     for the goal projection. Needs price history, like the other analyses.
     """
-    result = assess(answers)
+    result = assess(answers, goal_years=goal["years"] if goal else None)
     alloc = allocate(result.profile, amount)
     weights = MODEL_PORTFOLIOS[result.profile]
 
@@ -32,6 +32,8 @@ def build_review(name: str, answers: dict, amount: float, prices=None, goal: dic
         "score_profile": result.score_profile,
         "profile": result.profile,
         "capped": result.capped,
+        "cap_reason": result.cap_reason,
+        "goal_years": goal["years"] if goal else None,
         "stock_share": stock_share(alloc),
         "holdings": [{"ticker": h.ticker, "asset_class": h.asset_class,
                       "weight": h.weight, "dollars": h.dollars} for h in alloc.holdings],

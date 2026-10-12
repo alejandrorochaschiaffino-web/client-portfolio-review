@@ -116,3 +116,12 @@ def test_growth_falls_more_than_conservative_in_2008():
     g = run_stress_tests(prices, MODEL_PORTFOLIOS["Growth"], 1)["2008 Financial Crisis"]
     c = run_stress_tests(prices, MODEL_PORTFOLIOS["Conservative"], 1)["2008 Financial Crisis"]
     assert g["return"] < c["return"] < 0.05
+
+
+def test_snapshot_that_ends_before_the_2022_tests_is_refused():
+    import pandas as pd
+    from portfolio_tool.data import TICKERS, check_prices
+    days = pd.bdate_range("2007-06-01", "2021-09-15")
+    early = pd.DataFrame({t: range(1, len(days) + 1) for t in TICKERS}, index=days, dtype=float)
+    with pytest.raises(RuntimeError, match="too early"):
+        check_prices(early, must_be_recent=False)

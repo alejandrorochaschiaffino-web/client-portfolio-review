@@ -43,7 +43,10 @@ TEXT = {
         "intro": "Thank you for completing your investor questionnaire. Here is a summary of the portfolio that fits your situation, how it has behaved in past markets, and what to expect.",
         "h_profile": "Your investor profile",
         "profile": "Your answers scored **{score} out of 28**, which places you in the **{profile}** profile. {desc}",
-        "profile_capped": "Your answers scored **{score} out of 28**, which on its own points to the **{score_profile}** profile. Because you expect to need this money soon, we recommend the more cautious **{profile}** profile: there would be little time to recover from a large loss. {desc}",
+        "profile_capped": "Your answers scored **{score} out of 28**, which on its own points to the **{score_profile}** profile. {why} {desc}",
+        "why_horizon": "Because you expect to need this money soon, we recommend the more cautious **{profile}** profile: there would be little time to recover from a large loss.",
+        "why_goal": "Because your goal is only {years} away, we recommend the more cautious **{profile}** profile: there would be little time to recover from a large loss.",
+        "why_losses": "Because you told us you would sell everything after a 20% drop, we recommend the more cautious **{profile}** profile: a mix you can stay with through a downturn will serve you better than one you might sell at the bottom.",
         "h_portfolio": "Your recommended portfolio",
         "portfolio_intro": "For your investment of **{amount}**, we recommend this mix of low-cost index funds ({stocks} in stocks):",
         "col_fund": "Fund", "col_class": "Asset class", "col_weight": "Weight", "col_amount": "Amount",
@@ -60,7 +63,7 @@ TEXT = {
         "recovered": "It was back to even about {m} months after the market peak.",
         "not_recovered": "It has not yet fully recovered.",
         "h_stay": "Why staying invested matters",
-        "stay": "If you had invested {amount} at the 2008 peak and stayed invested, it would be worth about **{stayed}** today. Selling at the bottom and waiting a year to buy back in would have left about **{panicked}**: a cost of **{cost}** from one decision.",
+        "stay": "If you had invested {amount} at the October 2007 market peak, just before the 2008 crisis, and stayed invested, it would be worth about **{stayed}** today. Selling at the bottom and waiting a year to buy back in would have left about **{panicked}**: a cost of **{cost}** from one decision.",
         "h_timing": "If you will be withdrawing money",
         "timing": "Timing matters once withdrawals begin. Taking out **{wd}** a year for 10 years, with the 2008 crash at the start, would have left **{first}**. The exact same returns with the crash at the end would have left **{last}**. That is why we keep money you will need soon in safer investments.",
         "h_rates": "If interest rates change",
@@ -78,7 +81,10 @@ TEXT = {
         "intro": "Gracias por completar su cuestionario de inversionista. A continuación encontrará un resumen del portafolio que se ajusta a su situación, cómo se ha comportado en mercados pasados y qué puede esperar.",
         "h_profile": "Su perfil de inversionista",
         "profile": "Sus respuestas sumaron **{score} de 28** puntos, con lo cual su perfil es **{profile}**. {desc}",
-        "profile_capped": "Sus respuestas sumaron **{score} de 28** puntos, lo que por sí solo indica el perfil **{score_profile}**. Como espera necesitar este dinero pronto, le recomendamos el perfil más prudente **{profile}**: habría poco tiempo para recuperarse de una pérdida grande. {desc}",
+        "profile_capped": "Sus respuestas sumaron **{score} de 28** puntos, lo que por sí solo indica el perfil **{score_profile}**. {why} {desc}",
+        "why_horizon": "Como espera necesitar este dinero pronto, le recomendamos el perfil más prudente **{profile}**: habría poco tiempo para recuperarse de una pérdida grande.",
+        "why_goal": "Como su meta está a solo {years}, le recomendamos el perfil más prudente **{profile}**: habría poco tiempo para recuperarse de una pérdida grande.",
+        "why_losses": "Como nos dijo que vendería todo tras una caída del 20%, le recomendamos el perfil más prudente **{profile}**: una combinación que pueda mantener durante una caída le servirá más que una que podría vender en el peor momento.",
         "h_portfolio": "Su portafolio recomendado",
         "portfolio_intro": "Para su inversión de **{amount}**, recomendamos esta combinación de fondos indexados de bajo costo ({stocks} en acciones):",
         "col_fund": "Fondo", "col_class": "Clase de activo", "col_weight": "Porcentaje", "col_amount": "Monto",
@@ -95,7 +101,7 @@ TEXT = {
         "recovered": "Volvió a su valor inicial unos {m} meses después del punto máximo del mercado.",
         "not_recovered": "Todavía no se ha recuperado por completo.",
         "h_stay": "Por qué conviene mantenerse invertido",
-        "stay": "Si hubiera invertido {amount} en el punto máximo de 2008 y se hubiera mantenido invertido, hoy valdría alrededor de **{stayed}**. Vender en el punto más bajo y esperar un año para volver a invertir habría dejado alrededor de **{panicked}**: un costo de **{cost}** por una sola decisión.",
+        "stay": "Si hubiera invertido {amount} en el punto máximo del mercado de octubre de 2007, justo antes de la crisis de 2008, y se hubiera mantenido invertido, hoy valdría alrededor de **{stayed}**. Vender en el punto más bajo y esperar un año para volver a invertir habría dejado alrededor de **{panicked}**: un costo de **{cost}** por una sola decisión.",
         "h_timing": "Si va a retirar dinero",
         "timing": "El momento importa cuando empiezan los retiros. Retirando **{wd}** al año durante 10 años, con la caída de 2008 al principio, habrían quedado **{first}**. Los mismos rendimientos con la caída al final habrían dejado **{last}**. Por eso mantenemos en inversiones más seguras el dinero que necesitará pronto.",
         "h_rates": "Si cambian las tasas de interés",
@@ -158,9 +164,14 @@ def template_report(review: dict, lang: str = "en", opening: str | None = None,
     t = TEXT[lang]
     profile = PROFILE_NAMES[lang][review["profile"]]
     key = "profile_capped" if review["capped"] else "profile"
+    why = ""
+    if review["capped"]:
+        years = review.get("goal_years") or 0
+        why = t["why_" + (review.get("cap_reason") or "horizon")].format(
+            profile=profile, years=(t["year"] if years == 1 else t["years"]).format(n=years))
     lines = [f"# {t['title']}", "", t["dear"].format(name=md_escape(review["name"]) or t["client"]), "",
              opening or t["intro"], "", f"## {t['h_profile']}", "",
-             t[key].format(score=review["score"], profile=profile,
+             t[key].format(score=review["score"], profile=profile, why=why,
                            score_profile=PROFILE_NAMES[lang][review["score_profile"]],
                            desc=PROFILE_DESCRIPTIONS[lang][review["profile"]])]
     lines += ["", f"## {t['h_portfolio']}", "",
@@ -248,11 +259,14 @@ NUMBER_WORDS = {
     "en": r"zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
           r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
           r"eighty|ninety|hundreds?|thousands?|millions?|billions?|dozens?|percent|percentage|"
-          r"half|halve[sd]|doubled|doubles|twice|triple[sd]?|quarter|\w+fold",
+          r"half|halve[sd]|doubled|doubles|twice|triple[sd]?|quarters?|\w+fold|thirds?|fourths?|"
+          r"fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?|decades?|couple|dozen|"
+          r"second|third|fourth|fifth",
     "es": r"cero|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|"
           r"dieci\w+|veinte|veinti\w+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|"
           r"cien|\w*cient[oa]s|quinient[oa]s|mil|miles|mill[oó]n|millones|docenas?|porcentaje|"
-          r"por ciento|mitad|doble|triple",
+          r"por ciento|mitad|doble|triple|tercios?|cuartos?|quintos?|décimos?|medio|décadas?|"
+          r"par de|segund[oa]|tercer[oa]?",
 }
 
 # Predictions and promises. Checked on lowercase text with curly apostrophes
@@ -267,7 +281,11 @@ PROMISES = {
            r"\balways\s+(?:\w+\s+)?(?:recover|come back|bounce|go up|rise|grow|win)",
            r"\bexpect\w*\s+(?:\w+\s+){0,2}(?:growth|gains?|returns?|profits?)",
            r"(?:can't|cannot|can not|won't|will not|never|impossible to)\s+(?:\w+\s+)?lose",
-           r"risk[- ]?free|no risk|safe bet|sure thing|certain(?:ty)? of (?:gains|growth|returns)"],
+           r"risk[- ]?free|no risk|safe bet|sure thing|certain(?:ty)? of (?:gains|growth|returns)",
+           rf"\blikely to\s+(?:\w+\s+)?(?:{_GAIN_EN})",
+           r"\b(?:will|'ll|going to|should)\s+(?:\w+\s+){0,2}(?:keep|protect|shield|guard|secure|preserve)\b",
+           r"\bprotects? you from|\bsafe from\b|\bkeeps? (?:your )?(?:money|savings|portfolio|investment) safe",
+           r"\bexpect(?:s|ed)?\s+(?:\w+\s+){0,3}to\s+(?:grow|rise|gain|recover|increase|do well)"],
     "es": [r"\b(?:ganar|crecer|rendir|duplicar|subir|recuperar|aumentar|valorizar)[aá]n?\b",
            r"\bseguir[aá]n?\s+\w+(?:ando|iendo)\b",
            rf"\bvan? a\s+(?:\w+\s+)?(?:{_GAIN_ES})",
@@ -275,7 +293,11 @@ PROMISES = {
            r"(?:ganancias?|rendimientos?|crecimiento|beneficios?)",
            r"\bsiempre\s+(?:se\s+)?(?:recuper|sub|vuelv|crec|gan)\w*",
            r"\b(?:no|nunca)\s+(?:\w+\s+)?(?:perder[aá]n?|(?:puede|podr[aá]|va a)\s+perder)\b",
-           r"sin riesgo|cero riesgo|apuesta segura|seguro que"],
+           r"sin riesgo|cero riesgo|apuesta segura|seguro que",
+           rf"\b(?:deber[ií]an?|podr[ií]an?)\s+(?:\w+\s+)?(?:{_GAIN_ES})",
+           r"\bestar[aá]n?\s+(?:\w+\s+)?(?:segur|proteg|a salvo)",
+           r"\bproteger[aá]n?\b|\bmantendr[aá]n? (?:su )?(?:dinero|inversi[oó]n|portafolio) (?:segur|a salvo)",
+           r"\besperamos que\b|\bes probable que\s+(?:\w+\s+)?(?:crezc|gane|suba|se recupere)"],
 }
 GUARANTEE = r"guarant\w*|promis\w*|garantiz\w*|garant[ií]a\w*|promet\w*"
 NEGATED = (r"\b(?:no|not|never|cannot|can't|don't|doesn't|isn't|aren't|won't|nunca|ni|sin)\b"
@@ -325,8 +347,8 @@ Write two short passages:
 2. "summary": three to five sentences, in plain language, explaining why this mix fits the client's goal and timeline and what to keep in mind when markets fall.
 
 Strict rules:
-- NO numbers of any kind: no digits and no number words (not even "one", "half" or "double"), no dates, percentages or dollar amounts.
-- No promises or predictions about returns. Never say "guarantee" or that the portfolio "will" earn, grow or recover.
+- NO numbers of any kind: no digits, no number words, no fractions or ordinals (not even "one", "half", "a third", "double" or "decade"), no dates, percentages or dollar amounts.
+- No promises or predictions about returns or safety. Never say "guarantee", that the portfolio "will", "should" or is "likely to" grow, recover or keep money safe, or that it protects against losses.
 - No advice beyond the facts above. Plain sentences only: no headings, lists, bold, or symbols.
 - Under {words} words per passage.
 
@@ -354,8 +376,11 @@ def _prompt(review: dict, lang: str) -> str:
     opts = {q["id"]: q["answers"] for q in QUESTIONS}
     a = review["answers"]
     names = PROFILE_NAMES[lang]                 # so a Spanish letter uses the Spanish profile name
-    capped = (f"Their answers alone pointed to {names[review['score_profile']]}, but because they "
-              f"need the money soon the recommendation was lowered to {names[review['profile']]}."
+    because = {"horizon": "they need the money soon", "goal": "their goal is close",
+               "losses": "they said they would sell everything after a large drop"}
+    capped = (f"Their answers alone pointed to {names[review['score_profile']]}, but because "
+              f"{because[review.get('cap_reason') or 'horizon']} the recommendation was lowered to "
+              f"{names[review['profile']]}."
               if review["capped"] else "The recommendation matches their answers.")
     return PROMPT.format(
         language="Spanish (formal usted)" if lang == "es" else "English",

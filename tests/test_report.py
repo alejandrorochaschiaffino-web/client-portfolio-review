@@ -220,6 +220,18 @@ def test_capped_wording_is_not_contradictory():
     ("es", "Son quinientos dólares."),
     ("es", "Su portafolio no perderá valor."),
     ("es", "Los mercados siempre se recuperan."),
+    ("en", "Your portfolio is likely to grow over time."),
+    ("en", "This mix will keep your money safe."),
+    ("en", "This portfolio will protect you from big losses."),
+    ("en", "About a third of your money is in stocks."),
+    ("en", "Over the next decade it adds up."),
+    ("en", "We expect your savings to grow."),
+    ("es", "Su portafolio debería crecer."),
+    ("es", "Su dinero estará seguro."),
+    ("es", "Este portafolio protegerá su dinero."),
+    ("es", "Un tercio está en acciones."),
+    ("es", "En año y medio."),
+    ("es", "Esperamos que su portafolio crezca."),
 ])
 def test_promises_and_numbers_are_caught(lang, text):
     assert unsafe_reason(text, lang) is not None
@@ -235,6 +247,9 @@ def test_promises_and_numbers_are_caught(lang, text):
     ("es", "Los resultados pasados no garantizan rendimientos futuros."),
     ("es", "Nadie puede predecir los mercados, y no hay garantía de resultados."),
     ("es", "Como necesitará este dinero pronto, la mayor parte está en bonos."),
+    ("en", "Bonds tend to move less than stocks, which can soften a downturn."),
+    ("en", "Because you will need this money soon, most of it is in bonds."),
+    ("es", "Los bonos suelen moverse menos que las acciones."),
 ])
 def test_normal_disclaimer_wording_is_allowed(lang, text):
     assert unsafe_reason(text, lang) is None
@@ -274,3 +289,23 @@ def test_text_reply_with_line_breaks_and_code_fence_still_works():
     raw = '```json\n{"opening": "Thank you for sharing your goals.\nIt helps a lot.",\n "summary": "A calm, steady plan."}\n```'
     text, source = ai_report(maria(), "en", client=FakeClient(raw, text=True))
     assert source == "ai" and "A calm, steady plan." in text
+
+
+@pytest.mark.parametrize("answers,reason,phrase_en,phrase_es", [
+    (dict(horizon=4, goal=4, drop_reaction=1, experience=4, income=4, emergency_fund=4, tradeoff=4),
+     "losses", "sell everything after a 20% drop", "vendería todo tras una caída del 20%"),
+])
+def test_cap_explanation_matches_the_reason(answers, reason, phrase_en, phrase_es):
+    r = build_review("Ana", answers, 100_000)
+    assert r["capped"] and r["cap_reason"] == reason and r["profile"] == "Moderately Conservative"
+    assert phrase_en in template_report(r, "en") and phrase_es in template_report(r, "es")
+    assert "need this money soon" not in template_report(r, "en")
+
+
+def test_near_goal_caps_the_profile_and_says_why():
+    c = SAMPLE_CLIENTS[0]                                   # Jordan: Growth on his answers
+    goal = dict(c["goal"], years=2)
+    r = build_review(c["name"], c["answers"], c["amount"], goal=goal)
+    assert r["profile"] == "Conservative" and r["cap_reason"] == "goal"
+    assert "your goal is only 2 years away" in template_report(r, "en")
+    assert "su meta está a solo 2 años" in template_report(r, "es")
