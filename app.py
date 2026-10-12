@@ -12,6 +12,7 @@ import inspect
 import os
 import re
 import threading
+import unicodedata
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -357,7 +358,8 @@ def pdf_button(key):
         data = lambda: build_pdf(snapshot, letter_text, lang_)   # noqa: E731
     else:                                                        # older Streamlit: build now, cached
         data = cached_pdf((letter_key, letter_text), snapshot, letter_text, lang_)
-    safe = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "client"
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", ascii_name).strip("_") or "client"     # José -> Jose
     st.download_button(t["pdf"], data, file_name=f"portfolio_review_{safe}_{lang}.pdf",
                        mime="application/pdf", key=key, type="primary", icon=":material/picture_as_pdf:")
 

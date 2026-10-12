@@ -22,6 +22,8 @@ Figures are in future (nominal) dollars, before fees, taxes and inflation.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from .risk import month_end_values, portfolio_index
@@ -49,8 +51,8 @@ def bootstrap_returns(history: np.ndarray, months: int, n_paths: int,
         raise ValueError("months and n_paths must be positive")
     rng = np.random.default_rng(seed)
     n_blocks = -(-months // block)                          # ceiling division
-    starts = rng.integers(0, len(history), size=(n_paths, n_blocks))
-    idx = (starts[:, :, None] + np.arange(block)) % len(history)
+    starts = rng.integers(0, len(history), size=(n_paths, n_blocks), dtype=np.int32)
+    idx = (starts[:, :, None] + np.arange(block, dtype=np.int32)) % len(history)
     return history[idx.reshape(n_paths, n_blocks * block)[:, :months]]
 
 
@@ -80,22 +82,34 @@ def project(history: np.ndarray, amount: float, monthly: float, years: int,
         raise ValueError("years must be between 1 and 50")
     months = int(round(years * 12))
     returns = bootstrap_returns(history, months, n_paths, seed=seed)
+    # The SAME futures continued for two more years (for the "wait 2 years" lever).
+    extension = bootstrap_returns(history, 24, n_paths, seed=seed + 1)
 
-    # Month-by-month balances, kept only as percentiles (the fan chart).
-    balance = np.full(n_paths, float(amount))
+    # Walk every future month by month. G and A are built up as we go (no big
+    # extra matrices), and the balance percentiles are kept for the fan chart.
+    G, A = np.ones(n_paths), np.zeros(n_paths)
     bands = {p: [float(amount)] for p in PERCENTILES}
     for m in range(months):
-        balance = balance * (1 + returns[:, m]) + monthly
+        step = 1 + returns[:, m]
+        G *= step
+        A = A * step + 1.0                                  # deposit at the end of the month
+        balance = amount * G + monthly * A
         for p, v in zip(PERCENTILES, np.percentile(balance, PERCENTILES)):
             bands[p].append(float(v))
+    del returns
 
-    G, A = growth_factors(returns)
-    ending = amount * G + monthly * A                       # equals `balance` (tested)
+    ending = amount * G + monthly * A
     needed = np.maximum(0.0, (goal - amount * G) / A)       # savings each future needs
-    required = float(np.quantile(needed, TARGET_ODDS))      # met in 80% of futures
+    # Whole dollars, rounded UP, so saving exactly this amount really gives 80%+
+    # (rounding to the nearest dollar could land just below, e.g. 79.9%).
+    q = float(np.quantile(needed, TARGET_ODDS, method="higher"))
+    required = 0.0 if q <= 0 else float(math.ceil(q + 1e-6))
 
-    longer = bootstrap_returns(history, months + 24, n_paths, seed=seed)
-    G2, A2 = growth_factors(longer)
+    G2, A2 = G.copy(), A.copy()
+    for m in range(24):
+        step = 1 + extension[:, m]
+        G2 *= step
+        A2 = A2 * step + 1.0
 
     def odds(extra=0.0):
         return float(np.mean(ending + extra * A >= goal))

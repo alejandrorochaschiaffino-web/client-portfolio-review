@@ -77,3 +77,19 @@ def test_markdown_to_pdf_markup():
     assert md_inline("**$400,000** and *note*") == "<b>$400,000</b> and <i>note</i>"
     assert md_inline("\\*Ana\\* \\<b\\> \\$5 & co") == "*Ana* &lt;b&gt; $5 &amp; co"
     assert md_inline("2 * 3 * 4") == "2 * 3 * 4"            # lone asterisks aren't italics
+
+
+def test_malformed_markup_in_a_letter_does_not_break_the_pdf():
+    r = review_for(0)
+    letter = template_report(r, "en").replace("Sincerely,", "**a *b*** Sincerely,")
+    data = build_pdf(r, letter, "en")
+    assert data.startswith(b"%PDF") and "Sincerely" in pdf_text(data)[1]
+
+
+@needs_data
+def test_huge_amounts_fit_their_table_cells(prices):
+    c = SAMPLE_CLIENTS[2]
+    r = build_review(c["name"], c["answers"], 100_000_000, prices, c["goal"])
+    _, text = pdf_text(build_pdf(r, template_report(r, "es"), "es"))
+    assert "$100,000,000" in text                            # not split across two lines
+    assert usd(r["crises"][0]["dollar_change"]) in text

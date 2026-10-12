@@ -64,14 +64,22 @@ def test_more_savings_or_more_time_never_lowers_the_odds():
     assert 0 < res["probability"] < 1
 
 
-def test_required_savings_really_gives_80_percent_odds():
-    res = project(HISTORY, 80_000, 200, 12, goal=250_000, n_paths=5_000)
+@pytest.mark.parametrize("years", [1, 12, 30])
+def test_saving_the_suggested_amount_really_gives_80_percent(years):
+    goal = 80_000 * 1.006 ** (years * 12) * 1.3            # a stretch for every horizon
+    res = project(HISTORY, 80_000, 200, years, goal=goal, n_paths=5_000)
     need = res["required_monthly"]
-    assert need > 200                                    # current savings fall short
-    again = project(HISTORY, 80_000, need + 0.01, 12, goal=250_000, n_paths=5_000)
-    assert again["probability"] >= TARGET_ODDS
-    short = project(HISTORY, 80_000, need * 0.9, 12, goal=250_000, n_paths=5_000)
-    assert short["probability"] < TARGET_ODDS
+    assert need == int(need) and need > 200                 # whole dollars, more than now
+    again = project(HISTORY, 80_000, need, years, goal=goal, n_paths=5_000)
+    assert again["probability"] >= TARGET_ODDS               # shows "80%" or more, never 79%
+    short = project(HISTORY, 80_000, need - 25, years, goal=goal, n_paths=5_000)
+    assert short["probability"] < again["probability"]
+
+
+def test_waiting_two_years_extends_the_same_futures():
+    gains_only = np.abs(HISTORY)                             # every month is a gain
+    res = project(gains_only, 50_000, 0, 10, goal=50_000 * 1.03 ** 10 * 1.4, n_paths=3_000)
+    assert res["levers"]["plus_2_years"] >= res["probability"]   # extra time can only help here
 
 
 def test_easy_goal_needs_no_savings():

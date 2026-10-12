@@ -23,6 +23,7 @@ import matplotlib
 
 matplotlib.use("Agg")                     # no screen needed (servers, tests)
 import matplotlib.pyplot as plt           # noqa: E402
+from matplotlib import patheffects        # noqa: E402
 from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 from reportlab.lib import colors          # noqa: E402
 from reportlab.lib.enums import TA_LEFT   # noqa: E402
@@ -211,7 +212,8 @@ def _table(rows, widths, st, header=True, align_right=()):
     t = Table(data, colWidths=[w * inch for w in widths], hAlign="LEFT")
     style = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
              ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor(RULE)),
-             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
+             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+             ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]
     if header:
         style.append(("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PANEL)))
     for col in align_right:
@@ -245,7 +247,7 @@ def _fan(g, lang):
     ax.plot(x, b[50], color=BLUE, linewidth=2, label=L["typical"])
     ax.axhline(g["goal"], color=ORANGE, linewidth=1.6, linestyle="--")
     ax.text(0, g["goal"], f" {L['goal_line']}: {usd(g['goal'])}", color=ORANGE, fontsize=7.5,
-            va="bottom", ha="left", bbox=dict(facecolor="white", edgecolor="none", pad=1, alpha=0.85))
+            va="bottom", ha="left", path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")])
     _clean_axes(ax)
     _money_axis(ax)
     ax.set_xlabel(L["x_years"], fontsize=7.5, color=MUTED)
@@ -314,6 +316,14 @@ def _sequence(review, lang):
 
 # ----------------------------------------------------------------- letter
 
+def _para(markup: str, style, plain: str, **kw):
+    """A Paragraph from mini-markup; if the markup is malformed, the plain text instead."""
+    try:
+        return Paragraph(markup, style, **kw)
+    except ValueError:
+        return Paragraph(_x(re.sub(r"\\(.)", r"\1", plain)), style, **kw)
+
+
 def letter_flowables(letter_md: str, st) -> list:
     """The Markdown client letter as ReportLab paragraphs and tables."""
     out, table = [], []
@@ -337,15 +347,15 @@ def letter_flowables(letter_md: str, st) -> list:
         if not s or s == "---":
             continue
         if s.startswith("# "):
-            out.append(Paragraph(md_inline(s[2:]), st["h2"]))
+            out.append(_para(md_inline(s[2:]), st["h2"], s[2:]))
         elif s.startswith("## "):
-            out.append(Paragraph(md_inline(s[3:]), st["h3"]))
+            out.append(_para(md_inline(s[3:]), st["h3"], s[3:]))
         elif s.startswith("- "):
-            out.append(Paragraph(md_inline(s[2:]), st["body"], bulletText="•"))
+            out.append(_para(md_inline(s[2:]), st["body"], s[2:], bulletText="•"))
         elif s.startswith("*") and s.endswith("*") and not s.startswith("**"):
-            out.append(Paragraph(md_inline(s), st["small"]))
+            out.append(_para(md_inline(s), st["small"], s.strip("*")))
         else:
-            out.append(Paragraph(md_inline(s), st["body"]))
+            out.append(_para(md_inline(s), st["body"], s))
     flush_table()
     return out
 
@@ -394,7 +404,7 @@ def build_pdf(review: dict, letter_md: str, lang: str = "en", today: date | None
               + _x(ASSET_CLASSES[lang][h["asset_class"]]), f"{h['weight']:.0%}", usd(h["dollars"])]
              for h in review["holdings"]]
     rows.append([f"<b>{_x(L['total'])}</b>", "", "<b>100%</b>", f"<b>{_x(usd(review['amount']))}</b>"])
-    holdings = _table(rows, [0.65, 2.05, 1.0, 0.95], st, align_right=(2, 3))
+    holdings = _table(rows, [0.6, 1.95, 0.95, 1.2], st, align_right=(2, 3))
     side = Table([[_fig_to_image(_donut(review, lang), 1.55), holdings]],
                  colWidths=[1.8 * inch, 4.75 * inch], hAlign="LEFT")
     side.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -428,7 +438,7 @@ def build_pdf(review: dict, letter_md: str, lang: str = "en", today: date | None
             back = L["months"].format(m=round(c["months_total"])) if c["recovered"] else L["not_yet"]
             crisis_rows.append([CRISIS_NAMES[lang][c["name"]], f"{c['return']:.1%}", usd(c["dollar_change"]), back])
         pair = Table([[_fig_to_image(_crisis_bars(review, lang), 2.8),
-                       _table(crisis_rows, [1.3, 0.68, 0.8, 1.0], st, align_right=(1, 2))]],
+                       _table(crisis_rows, [1.0, 0.68, 1.05, 1.05], st, align_right=(1, 2))]],
                      colWidths=[2.82 * inch, 3.78 * inch], hAlign="LEFT")
         pair.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
         story.append(pair)
