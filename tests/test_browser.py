@@ -129,3 +129,30 @@ def test_odd_client_names_render_safely(page):
     page.get_by_role("tab", name="Overview").click()
     sidebar(page).get_by_text("Reload sample answers").click()
     settle(page)
+
+
+def goal_odds(pg):
+    return pg.locator('[data-testid="stMarkdownContainer"] h2').filter(has_text="%").first.inner_text()
+
+
+def test_goal_inputs_follow_samples_edits_and_language(page):
+    pick_sample(page, "Jordan Lee")
+    page.get_by_role("tab", name="Goal projection").click()
+    settle(page)
+    target = page.get_by_label("Goal ($)")
+    assert target.input_value() == "1000000"
+    assert goal_odds(page) == "66%"
+    target.fill("20000000")
+    target.press("Enter")
+    settle(page)
+    assert goal_odds(page) == "0%"                      # far out of reach
+    sidebar(page).get_by_text("Español").click()
+    settle(page)
+    assert page.get_by_label("Meta ($)").input_value() == "20000000"   # survives the switch
+    sidebar(page).get_by_text("English").click()
+    settle(page)
+    sidebar(page).get_by_text("Reload sample answers").click()
+    settle(page)
+    assert page.get_by_label("Goal ($)").input_value() == "1000000"
+    page.get_by_role("tab", name="Overview").click()
+    settle(page)

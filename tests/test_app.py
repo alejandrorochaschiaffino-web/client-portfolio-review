@@ -28,7 +28,7 @@ def metric(at, label):
 def test_app_loads_with_default_client():
     at = start()
     assert at.title[0].value == "Client Portfolio Review"
-    assert len(at.tabs) == 5
+    assert len(at.tabs) == 6
     assert metric(at, "In stocks") == "20%"          # Maria -> Conservative
     assert any("capped" in i.value for i in at.info)
 
@@ -132,3 +132,22 @@ def test_session_ai_limit(fake_ai):
         at.button(key="ai_btn").click().run()
     assert len(calls) == 5
     assert at.button(key="ai_btn").disabled                  # disabled right after the 5th use
+
+
+def test_goal_projection_tab():
+    at = start()
+    assert at.number_input(key="goal_target").value == 400_000      # Maria's sample goal
+    assert any(m.value.startswith("## 8") for m in at.markdown)      # odds in the 80s
+    at.number_input(key="goal_target").set_value(2_000_000).run()    # a goal she can't reach
+    assert not at.exception
+    assert any(m.value == "## 0%" for m in at.markdown)
+    assert any("save about" in i.value for i in at.info)
+
+
+def test_sample_switch_sets_the_goal_and_letter_mentions_it():
+    at = start()
+    at.sidebar.selectbox[0].set_value("Jordan Lee").run()
+    assert at.number_input(key="goal_target").value == 1_000_000
+    assert at.number_input(key="goal_years").value == 30
+    text = " ".join(m.value for m in at.markdown)
+    assert "Reaching your goal" in text and "10,000 possible futures" in text

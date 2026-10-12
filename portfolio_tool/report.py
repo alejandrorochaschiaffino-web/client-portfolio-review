@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 
@@ -46,6 +47,12 @@ TEXT = {
         "h_portfolio": "Your recommended portfolio",
         "portfolio_intro": "For your investment of **{amount}**, we recommend this mix of low-cost index funds ({stocks} in stocks):",
         "col_fund": "Fund", "col_class": "Asset class", "col_weight": "Weight", "col_amount": "Amount",
+        "h_goal": "Reaching your goal",
+        "goal": "Your goal is to have **{target}** in {years}. We simulated {n} possible futures for this portfolio, built from how it has actually behaved since {start}{saving}. You reached your goal in **{prob}** of them. In a typical future you would have about **{median}**; in a bad one (1 in 10), about **{low}**.",
+        "goal_saving": ", with you adding **{monthly}** a month",
+        "goal_on_track": "That puts your plan on track.",
+        "goal_raise": "Saving about **{required}** a month in total would raise the odds to 80%.",
+        "year": "{n} year", "years": "{n} years",
         "h_expect": "How it has behaved historically",
         "expect": "From {start} to {end}, this portfolio grew at an annualized rate of **{ret}**, with typical yearly swings (volatility) of about **{vol}**. At its worst it fell **{dd}** from a high point, a loss of **{dd_usd}** on your investment.",
         "h_crises": "How it handled past crises",
@@ -63,7 +70,7 @@ TEXT = {
         "next": "I would be glad to walk through this review with you, answer any questions, and adjust the plan if your situation changes.",
         "closing": "Sincerely,",
         "advisor": "Your advisor",
-        "disclaimer": "This review is an educational example, not personalized investment advice. Past results do not guarantee future returns. Figures use historical index-fund prices through {through} and are before fees and taxes.",
+        "disclaimer": "This review is an educational example, not personalized investment advice. Past results do not guarantee future returns. Figures use historical index-fund prices through {through} and are before fees and taxes. The goal projection is a simulation, not a prediction, and is not adjusted for inflation.",
     },
     "es": {
         "title": "Revisión de su portafolio",
@@ -75,6 +82,12 @@ TEXT = {
         "h_portfolio": "Su portafolio recomendado",
         "portfolio_intro": "Para su inversión de **{amount}**, recomendamos esta combinación de fondos indexados de bajo costo ({stocks} en acciones):",
         "col_fund": "Fondo", "col_class": "Clase de activo", "col_weight": "Porcentaje", "col_amount": "Monto",
+        "h_goal": "Cómo alcanzar su meta",
+        "goal": "Su meta es tener **{target}** en {years}. Simulamos {n} futuros posibles para este portafolio, a partir de cómo se ha comportado realmente desde {start}{saving}. Alcanzó su meta en el **{prob}** de ellos. En un futuro típico tendría alrededor de **{median}**; en uno malo (1 de cada 10), alrededor de **{low}**.",
+        "goal_saving": ", aportando **{monthly}** al mes",
+        "goal_on_track": "Eso indica que su plan va por buen camino.",
+        "goal_raise": "Ahorrar alrededor de **{required}** al mes en total subiría la probabilidad al 80%.",
+        "year": "{n} año", "years": "{n} años",
         "h_expect": "Cómo se ha comportado históricamente",
         "expect": "De {start} a {end}, este portafolio creció a una tasa anualizada de **{ret}**, con altibajos anuales típicos (volatilidad) de alrededor de **{vol}**. En su peor momento cayó **{dd}** desde un punto máximo, una pérdida de **{dd_usd}** sobre su inversión.",
         "h_crises": "Cómo resistió crisis pasadas",
@@ -92,7 +105,7 @@ TEXT = {
         "next": "Con gusto revisaré este análisis con usted, responderé sus preguntas y ajustaré el plan si su situación cambia.",
         "closing": "Atentamente,",
         "advisor": "Su asesor",
-        "disclaimer": "Esta revisión es un ejemplo educativo y no constituye asesoría de inversión personalizada. Los resultados pasados no garantizan rendimientos futuros. Las cifras usan precios históricos de fondos indexados hasta el {through} y no incluyen comisiones ni impuestos.",
+        "disclaimer": "Esta revisión es un ejemplo educativo y no constituye asesoría de inversión personalizada. Los resultados pasados no garantizan rendimientos futuros. Las cifras usan precios históricos de fondos indexados hasta el {through} y no incluyen comisiones ni impuestos. La proyección de la meta es una simulación, no una predicción, y no está ajustada por inflación.",
     },
 }
 
@@ -114,6 +127,25 @@ _MD_SPECIAL = re.compile(r"([\\`*_\[\]<>#|~])")
 def md_escape(text: str) -> str:
     """Make user-typed text (the client name) show literally inside Markdown."""
     return _MD_SPECIAL.sub(r"\\\1", text)
+
+
+def odds(p: float) -> str:
+    """A probability as a whole percent, rounded DOWN so 79.6% never reads as 80%."""
+    return f"{math.floor(p * 100 + 1e-9)}%"
+
+
+def goal_paragraph(g: dict, start, lang: str) -> str:
+    """The goal projection in one paragraph (also used by the PDF report)."""
+    t = TEXT[lang]
+    years = (t["year"] if g["years"] == 1 else t["years"]).format(n=g["years"])
+    saving = t["goal_saving"].format(monthly=usd(g["monthly"])) if g["monthly"] > 0 else ""
+    text = t["goal"].format(target=usd(g["goal"]), years=years, n=f"{g['n_paths']:,}",
+                            start=_month_year(start, lang), saving=saving,
+                            prob=odds(g["probability"]), median=usd(g["ending"][50]),
+                            low=usd(g["ending"][10]))
+    advice = (t["goal_on_track"] if g["probability"] >= 0.80
+              else t["goal_raise"].format(required=usd(g["required_monthly"])))
+    return text + " " + advice
 
 
 def template_report(review: dict, lang: str = "en", opening: str | None = None,
@@ -141,6 +173,9 @@ def template_report(review: dict, lang: str = "en", opening: str | None = None,
 
     if review["has_history"]:
         s = review["stats"]
+        g = review.get("goal")
+        if g:
+            lines += ["", f"## {t['h_goal']}", "", goal_paragraph(g, s["start"], lang)]
         lines += ["", f"## {t['h_expect']}", "",
                   t["expect"].format(start=_month_year(s["start"], lang), end=_month_year(s["end"], lang),
                                      ret=pct(s["annual_return"]), vol=pct(s["volatility"]),

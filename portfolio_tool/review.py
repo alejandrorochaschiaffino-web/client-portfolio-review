@@ -4,15 +4,22 @@ as plain data. The terminal demo, the web app and the client report all
 read from this, so they can never disagree with each other.
 """
 
+from __future__ import annotations
+
 from .allocation import allocate, stock_share
 from .client_scenarios import all_panic_costs, all_recoveries, sequence_risk
 from .duration import rate_shock
 from .portfolios import MODEL_PORTFOLIOS
 from .profiles import assess
+from .projection import monthly_returns, project
 from .risk import portfolio_stats, run_stress_tests
 
 
-def build_review(name: str, answers: dict, amount: float, prices=None) -> dict:
+def build_review(name: str, answers: dict, amount: float, prices=None, goal: dict | None = None) -> dict:
+    """
+    goal (optional): {"target": dollars, "years": n, "monthly": savings per month}
+    for the goal projection. Needs price history, like the other analyses.
+    """
     result = assess(answers)
     alloc = allocate(result.profile, amount)
     weights = MODEL_PORTFOLIOS[result.profile]
@@ -52,5 +59,7 @@ def build_review(name: str, answers: dict, amount: float, prices=None) -> dict:
             "panic_cost": panic[name_]["cost"],
         } for name_ in stress],
         "sequence": sequence_risk(prices, weights, amount),
+        "goal": (project(monthly_returns(prices, weights), amount, goal["monthly"],
+                         goal["years"], goal["target"]) if goal else None),
     })
     return review

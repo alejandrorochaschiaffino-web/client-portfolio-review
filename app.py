@@ -20,7 +20,7 @@ from portfolio_tool import data
 from portfolio_tool.i18n import (ASSET_CLASSES, CRISIS_NAMES, CRISIS_NOTES,
                                  PROFILE_DESCRIPTIONS, PROFILE_NAMES, question_text)
 from portfolio_tool.profiles import QUESTIONS
-from portfolio_tool.report import ai_report, escape_dollars, template_report, usd
+from portfolio_tool.report import ai_report, escape_dollars, odds, template_report, usd
 from portfolio_tool.review import build_review
 from portfolio_tool.sample_clients import SAMPLE_CLIENTS
 
@@ -39,7 +39,21 @@ UI = {
         "subtitle": "Answer seven questions to see a recommended portfolio, how it held up in real crises, and a client letter in English or Spanish.",
         "language": "Language", "sample": "Start from a sample client", "reload": "Reload sample answers",
         "name": "Client name", "amount": "Amount to invest ($)", "questions": "Investor questionnaire",
-        "tabs": ["Overview", "Crisis stress tests", "Client questions", "Interest rates", "Client letter"],
+        "tabs": ["Overview", "Goal projection", "Crisis stress tests", "Client questions", "Interest rates", "Client letter"],
+        "goal_title": "Will this plan reach the goal?",
+        "goal_target": "Goal ($)", "goal_years": "Years", "goal_monthly": "Monthly savings ($)",
+        "goal_headline": "chance of reaching **{target}** in {years}",
+        "goal_median": "Typical outcome", "goal_low": "Bad case (1 in 10)", "goal_put_in": "Total you put in",
+        "goal_median_help": "The middle result: half the simulated futures end above this, half below.",
+        "goal_low_help": "Only 1 in 10 simulated futures ended lower than this.",
+        "goal_band_wide": "8 in 10 futures", "goal_band_mid": "Middle half", "goal_line_median": "Typical",
+        "goal_line_goal": "Goal", "goal_x": "Years from today", "goal_y": "Portfolio value ($)",
+        "goal_levers": "What would raise the odds", "goal_change": "Change", "goal_chance": "Chance of reaching the goal",
+        "goal_now": "Current plan", "goal_plus": "Save {extra} more a month", "goal_wait": "Give it 2 more years",
+        "goal_on_track": "On track: the odds are already 80% or better.",
+        "goal_need": "To reach an 80% chance, save about **{required}** a month in total.",
+        "goal_method": "{n} simulated futures, each stitched together from real 12-month stretches of this portfolio's history since {start}. A simulation, not a prediction; before fees, taxes and inflation.",
+        "goal_error": "Enter a goal, a number of years (1 to 50) and monthly savings to see the projection.",
         "profile": "Recommended profile", "score": "Risk score: {score} / 28",
         "capped": "The answers alone point to **{score_profile}**, but the money is needed soon, so the profile is capped at **{profile}** (suitability: little time to recover from a loss).",
         "ann": "Annualized return", "vol": "Volatility", "worst": "Worst fall", "stocks": "In stocks",
@@ -79,7 +93,21 @@ UI = {
         "subtitle": "Responda siete preguntas para ver un portafolio recomendado, cómo resistió crisis reales y una carta para el cliente en inglés o español.",
         "language": "Idioma", "sample": "Empezar con un cliente de ejemplo", "reload": "Restaurar respuestas del ejemplo",
         "name": "Nombre del cliente", "amount": "Monto a invertir ($)", "questions": "Cuestionario del inversionista",
-        "tabs": ["Resumen", "Pruebas de estrés", "Preguntas del cliente", "Tasas de interés", "Carta al cliente"],
+        "tabs": ["Resumen", "Proyección de la meta", "Pruebas de estrés", "Preguntas del cliente", "Tasas de interés", "Carta al cliente"],
+        "goal_title": "¿Alcanzará este plan la meta?",
+        "goal_target": "Meta ($)", "goal_years": "Años", "goal_monthly": "Ahorro mensual ($)",
+        "goal_headline": "de probabilidad de llegar a **{target}** en {years}",
+        "goal_median": "Resultado típico", "goal_low": "Caso malo (1 de cada 10)", "goal_put_in": "Total aportado",
+        "goal_median_help": "El resultado del medio: la mitad de los futuros simulados terminan por encima y la mitad por debajo.",
+        "goal_low_help": "Solo 1 de cada 10 futuros simulados terminó por debajo de esta cifra.",
+        "goal_band_wide": "8 de cada 10 futuros", "goal_band_mid": "Mitad central", "goal_line_median": "Típico",
+        "goal_line_goal": "Meta", "goal_x": "Años a partir de hoy", "goal_y": "Valor del portafolio ($)",
+        "goal_levers": "Qué subiría la probabilidad", "goal_change": "Cambio", "goal_chance": "Probabilidad de alcanzar la meta",
+        "goal_now": "Plan actual", "goal_plus": "Ahorrar {extra} más al mes", "goal_wait": "Darle 2 años más",
+        "goal_on_track": "Va por buen camino: la probabilidad ya es de 80% o más.",
+        "goal_need": "Para llegar a 80% de probabilidad, ahorre alrededor de **{required}** al mes en total.",
+        "goal_method": "{n} futuros simulados, cada uno armado con tramos reales de 12 meses de la historia de este portafolio desde {start}. Una simulación, no una predicción; antes de comisiones, impuestos e inflación.",
+        "goal_error": "Ingrese una meta, un número de años (de 1 a 50) y el ahorro mensual para ver la proyección.",
         "profile": "Perfil recomendado", "score": "Puntaje de riesgo: {score} / 28",
         "capped": "Las respuestas por sí solas indican **{score_profile}**, pero el dinero se necesitará pronto, así que el perfil se limita a **{profile}** (idoneidad: poco tiempo para recuperarse de una pérdida).",
         "ann": "Rendimiento anualizado", "vol": "Volatilidad", "worst": "Peor caída", "stocks": "En acciones",
@@ -134,9 +162,10 @@ def load_prices():
 
 
 @st.cache_data(max_entries=200, show_spinner=False)
-def cached_review(name, answers_items, amount, data_version, _prices):
+def cached_review(name, answers_items, amount, goal_items, data_version, _prices):
     """build_review() is the slow part; reruns with the same inputs reuse it."""
-    return build_review(name, dict(answers_items), amount, _prices)
+    return build_review(name, dict(answers_items), amount, _prices,
+                        goal=dict(goal_items) if goal_items else None)
 
 
 @st.cache_resource
@@ -238,6 +267,9 @@ def apply_sample():
             st.session_state.name = c["name"]
             st.session_state.amount = float(c["amount"])
             st.session_state.answers = dict(c["answers"])
+            st.session_state.goal_target = float(c["goal"]["target"])
+            st.session_state.goal_years = int(c["goal"]["years"])
+            st.session_state.goal_monthly = float(c["goal"]["monthly"])
             _set_answer_widgets(c["answers"])
 
 
@@ -272,7 +304,13 @@ with st.sidebar:
 
 prices, source = load_prices()
 data_version = (source, str(prices.index[-1])) if prices is not None else None
-review = cached_review(name, tuple(sorted(answers.items())), amount, data_version, prices)
+DEFAULT_GOAL = SAMPLE_CLIENTS[2]["goal"]
+goal = {"target": float(st.session_state.get("goal_target", DEFAULT_GOAL["target"])),
+        "years": int(st.session_state.get("goal_years", DEFAULT_GOAL["years"])),
+        "monthly": float(st.session_state.get("goal_monthly", DEFAULT_GOAL["monthly"]))}
+goal_ok = goal["target"] > 0 and 1 <= goal["years"] <= 50 and goal["monthly"] >= 0
+review = cached_review(name, tuple(sorted(answers.items())), amount,
+                       tuple(sorted(goal.items())) if goal_ok else None, data_version, prices)
 profile = PROFILE_NAMES[lang][review["profile"]]
 
 st.title(t["title"])
@@ -319,8 +357,67 @@ with tabs[0]:
         fig.update_layout(margin=dict(l=40, r=40, t=30, b=10))
         st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
 
-# Crisis stress tests ------------------------------------------------------
+# Goal projection ----------------------------------------------------------
 with tabs[1]:
+    st.markdown(f"#### {t['goal_title']}")
+    g1, g2, g3 = st.columns(3)
+    g1.number_input(t["goal_target"], min_value=1000.0, max_value=1_000_000_000.0, step=10_000.0,
+                    format="%.0f", key="goal_target")
+    g2.number_input(t["goal_years"], min_value=1, max_value=50, step=1, key="goal_years")
+    g3.number_input(t["goal_monthly"], min_value=0.0, max_value=1_000_000.0, step=50.0,
+                    format="%.0f", key="goal_monthly")
+    g = review.get("goal")
+    if not review["has_history"]:
+        st.info(t["no_data"])
+    elif not g:
+        st.info(t["goal_error"])
+    else:
+        years_txt = (f"{g['years']} " + ("year" if g["years"] == 1 else "years") if lang == "en"
+                     else f"{g['years']} " + ("año" if g["years"] == 1 else "años"))
+        st.markdown(f"## {odds(g['probability'])}")
+        st.markdown(escape_dollars(t["goal_headline"].format(target=usd(g["goal"]), years=years_txt)))
+        m1, m2, m3 = st.columns(3)
+        m1.metric(t["goal_median"], usd(g["ending"][50]), help=t["goal_median_help"])
+        m2.metric(t["goal_low"], usd(g["ending"][10]), help=t["goal_low_help"])
+        m3.metric(t["goal_put_in"], usd(g["contributed"]))
+
+        x = [m / 12 for m in range(g["months"] + 1)]
+        b = g["bands"]
+        fig = go.Figure()
+        for lo, hi, label, alpha in ((10, 90, t["goal_band_wide"], 0.18), (25, 75, t["goal_band_mid"], 0.35)):
+            fig.add_trace(go.Scatter(x=x, y=b[hi], mode="lines", line=dict(width=0),
+                                     showlegend=False, hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=x, y=b[lo], mode="lines", line=dict(width=0), fill="tonexty",
+                                     fillcolor=f"rgba(42,120,214,{alpha})", name=label, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=x, y=b[50], mode="lines", line=dict(color=BLUE, width=2),
+                                 name=t["goal_line_median"],
+                                 hovertemplate="%{x:.1f} " + t["yrs"] + ": $%{y:,.0f}<extra></extra>"))
+        fig.add_hline(y=g["goal"], line=dict(color=ORANGE, width=2, dash="dash"),
+                      annotation_text=f"{t['goal_line_goal']}: {usd(g['goal'])}",
+                      annotation_position="top left")
+        fig.update_xaxes(title=t["goal_x"])
+        fig.update_yaxes(title=t["goal_y"], tickformat="$,.0f", rangemode="tozero")
+        fig = style(fig, 400)
+        fig.update_layout(legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0),
+                          margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig, width="stretch", theme="streamlit", config=CHART_CONFIG)
+
+        st.markdown(f"##### {t['goal_levers']}")
+        lev = g["levers"]
+        rows = [(t["goal_now"], g["probability"])]
+        rows += [(t["goal_plus"].format(extra=usd(e)), lev[f"plus_{e}"]) for e in (100, 250, 500)]
+        rows.append((t["goal_wait"], lev["plus_2_years"]))
+        st.dataframe(pd.DataFrame([{t["goal_change"]: r, t["goal_chance"]: odds(p)} for r, p in rows]),
+                     hide_index=True, width="stretch")
+        if g["probability"] >= 0.80:
+            st.success(t["goal_on_track"])
+        else:
+            st.info(escape_dollars(t["goal_need"].format(required=usd(g["required_monthly"]))))
+        st.caption(t["goal_method"].format(n=f"{g['n_paths']:,}",
+                                           start=month_year(review["stats"]["start"], lang)))
+
+# Crisis stress tests ------------------------------------------------------
+with tabs[2]:
     st.markdown(f"#### {t['crisis_title']}")
     st.caption(t["crisis_sub"])
     if review["has_history"]:
@@ -349,7 +446,7 @@ with tabs[1]:
         st.info(t["no_data"])
 
 # Client questions ---------------------------------------------------------
-with tabs[2]:
+with tabs[3]:
     if review["has_history"]:
         crises = review["crises"]
         names = [CRISIS_NAMES[lang][c["name"]] for c in crises]
@@ -399,7 +496,7 @@ with tabs[2]:
         st.info(t["no_data"])
 
 # Interest rates -----------------------------------------------------------
-with tabs[3]:
+with tabs[4]:
     st.markdown(f"#### {t['rates_title']}")
     st.caption(t["rates_sub"])
     shocks = review["rate_shocks"]
@@ -414,7 +511,7 @@ with tabs[3]:
     st.plotly_chart(style(fig, 320), width="stretch", theme="streamlit", config=CHART_CONFIG)
 
 # Client letter ------------------------------------------------------------
-with tabs[4]:
+with tabs[5]:
     st.markdown(f"#### {t['letter_title']}")
     letter_key = (name, amount, tuple(sorted(answers.items())), lang, str(review.get("data_through")))
     letters = st.session_state.setdefault("letters", {})

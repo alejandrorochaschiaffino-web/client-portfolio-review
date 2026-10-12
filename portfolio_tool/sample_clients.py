@@ -1,6 +1,7 @@
 """
 Three made-up clients for demos and tests. Answers are points (1-4)
-for each question in profiles.QUESTIONS.
+for each question in profiles.QUESTIONS. Each has a savings goal for the
+goal projection: reach `target` dollars in `years`, adding `monthly`.
 """
 
 SAMPLE_CLIENTS = [
@@ -12,6 +13,7 @@ SAMPLE_CLIENTS = [
         "answers": {"horizon": 4, "goal": 4, "drop_reaction": 4,
                     "experience": 3, "income": 4, "emergency_fund": 3,
                     "tradeoff": 4},
+        "goal": {"target": 1_000_000, "years": 30, "monthly": 500},
     },
     {
         "name": "Carlos and Ana Rivera",
@@ -21,6 +23,7 @@ SAMPLE_CLIENTS = [
         "answers": {"horizon": 3, "goal": 3, "drop_reaction": 3,
                     "experience": 3, "income": 3, "emergency_fund": 3,
                     "tradeoff": 2},
+        "goal": {"target": 200_000, "years": 8, "monthly": 400},
     },
     {
         "name": "Maria Gonzalez",
@@ -30,5 +33,6 @@ SAMPLE_CLIENTS = [
         "answers": {"horizon": 1, "goal": 3, "drop_reaction": 4,
                     "experience": 4, "income": 3, "emergency_fund": 4,
                     "tradeoff": 3},
+        "goal": {"target": 400_000, "years": 2, "monthly": 0},   # keep what she has
     },
 ]
