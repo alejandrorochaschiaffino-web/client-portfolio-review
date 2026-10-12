@@ -75,19 +75,40 @@ class FakeBlock:
         self.text = text
 
 
-class FakeClient:
-    """Stands in for the Anthropic client so tests need no API key."""
+class FakeToolBlock:
+    type = "tool_use"
 
-    def __init__(self, reply=None, error=False):
-        self.reply, self.error, self.calls, self.prompts = reply, error, 0, []
+    def __init__(self, data):
+        self.input = data
+
+
+class FakeClient:
+    """
+    Stands in for the Anthropic client so tests need no API key. By default it
+    answers through the tool, as the real API does with tool_choice; text=True
+    makes it answer in plain text instead (the fallback path).
+    """
+
+    def __init__(self, reply=None, error=False, text=False):
+        self.reply, self.error, self.text, self.calls, self.prompts = reply, error, text, 0, []
+        self.kwargs = None
         self.messages = self
 
     def create(self, **kwargs):
         self.calls += 1
+        self.kwargs = kwargs
         self.prompts.append(kwargs["messages"][0]["content"])
         if self.error:
             raise RuntimeError("API down")
-        return type("Msg", (), {"content": [FakeBlock(self.reply)]})()
+        block = FakeBlock(self.reply)
+        if not self.text:
+            try:
+                data = json.loads(self.reply)
+            except (TypeError, ValueError):
+                data = None
+            if isinstance(data, dict):
+                block = FakeToolBlock(data)
+        return type("Msg", (), {"content": [block], "stop_reason": "tool_use"})()
 
 
 def reply(opening, summary):
@@ -240,3 +261,16 @@ def test_ai_passage_keeps_a_markdown_name_literal():
     text, source = ai_report(r, "en", client=FakeClient(reply(
         "Thank you, Ana_Lee, for sharing your goals with me.", "A calm, steady plan.")))
     assert source == "ai" and "Thank you, Ana\\_Lee," in text
+
+
+def test_api_is_asked_for_structured_passages():
+    fake = FakeClient(GOOD_EN)
+    ai_report(maria(), "en", client=fake)
+    assert fake.kwargs["tool_choice"] == {"type": "tool", "name": "write_letter_passages"}
+    assert fake.kwargs["tools"][0]["input_schema"]["required"] == ["opening", "summary"]
+
+
+def test_text_reply_with_line_breaks_and_code_fence_still_works():
+    raw = '```json\n{"opening": "Thank you for sharing your goals.\nIt helps a lot.",\n "summary": "A calm, steady plan."}\n```'
+    text, source = ai_report(maria(), "en", client=FakeClient(raw, text=True))
+    assert source == "ai" and "A calm, steady plan." in text

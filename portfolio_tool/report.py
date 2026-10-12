@@ -295,7 +295,23 @@ Strict rules:
 - No advice beyond the facts above. Plain sentences only: no headings, lists, bold, or symbols.
 - Under {words} words per passage.
 
-Reply with JSON only: {{"opening": "...", "summary": "..."}}"""
+Return the two passages with the write_letter_passages tool."""
+
+# Asking for the passages through a "tool" makes the API hand back structured
+# data ({"opening": ..., "summary": ...}) instead of free text we would have to
+# parse; free text is still accepted as a fallback.
+PASSAGES_TOOL = {
+    "name": "write_letter_passages",
+    "description": "Submit the personal opening and the plain-language summary for the client letter.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "opening": {"type": "string", "description": "Two or three warm sentences, no numbers."},
+            "summary": {"type": "string", "description": "Three to five plain sentences, no numbers."},
+        },
+        "required": ["opening", "summary"],
+    },
+}
 
 
 def _prompt(review: dict, lang: str) -> str:
@@ -320,10 +336,20 @@ def _parse(text: str) -> dict | None:
     if not match:
         return None
     try:
-        out = json.loads(match.group(0))
+        out = json.loads(match.group(0), strict=False)    # allow line breaks inside strings
     except ValueError:
         return None
     return out if isinstance(out, dict) else None
+
+
+def _passages(msg) -> dict | None:
+    """The {opening, summary} dict from the API reply: the tool call, else parsed text."""
+    content = getattr(msg, "content", None) or []
+    for block in content:
+        if getattr(block, "type", "") == "tool_use" and isinstance(getattr(block, "input", None), dict):
+            return block.input
+    text = "".join(getattr(b, "text", "") for b in content if getattr(b, "type", "") == "text")
+    return _parse(text)
 
 
 def ai_report(review: dict, lang: str = "en", api_key: str | None = None,
@@ -348,16 +374,21 @@ def ai_report(review: dict, lang: str = "en", api_key: str | None = None,
     try:
         msg = client.messages.create(
             model=AI_MODEL, max_tokens=700,
+            tools=[PASSAGES_TOOL],
+            tool_choice={"type": "tool", "name": PASSAGES_TOOL["name"]},
             messages=[{"role": "user", "content": prompt}])
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     except Exception as e:
         log.warning("AI letter: API call failed (%s)", type(e).__name__)
         return draft, "template"
-    parts = _parse(text)
+    parts = _passages(msg)
     if not parts:
-        log.warning("AI letter: reply was not valid JSON")
+        log.warning("AI letter: reply had no usable passages (stop_reason=%s)",
+                    getattr(msg, "stop_reason", "?"))
         return draft, "template"
-    opening, summary = parts.get("opening"), parts.get("summary")
+    # One paragraph each: line breaks become spaces (this also rules out Markdown
+    # that only works at the start of a line, like lists or headings).
+    opening, summary = (" ".join(p.split()) if isinstance(p, str) else p
+                        for p in (parts.get("opening"), parts.get("summary")))
     for label, passage in (("opening", opening), ("summary", summary)):
         reason = unsafe_reason(passage, lang, review["name"])
         if reason:
